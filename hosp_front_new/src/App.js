@@ -36,6 +36,11 @@ import MedicinesReorder from "./reorder";
 import PatientMedicineTrack from "./patientmedi";
 import MedicinesExpiry from "./expiry";
 
+import NirvanaChat from "./nirvanachat";
+import NirvanaWelcome from "./Nirvanawelcome";
+
+
+
 function App() {
   return (
     <BrowserRouter>
@@ -73,6 +78,8 @@ function App() {
         <Route path="/pharmacist/patient-medicine-track" element={<PatientMedicineTrack />} />
         <Route path="/pharmacist/medicines-expiry" element={<MedicinesExpiry />} />
         <Route path="/home/patient" element={<PatientHome />} />
+        <Route path="/nirvana" element={<NirvanaWelcome />} />
+        <Route path="/nirvana/chat" element={<NirvanaChat />} />
 
       </Routes>
     </BrowserRouter>
