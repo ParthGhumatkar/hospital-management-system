@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import RoleSelection from "./roleselection";
 import DocSignup from "./docsignup";
@@ -36,6 +36,24 @@ import MedicinesReorder from "./reorder";
 import PatientMedicineTrack from "./patientmedi";
 import MedicinesExpiry from "./expiry";
 
+function NirvanaPlaceholder() {
+  return (
+    <div style={{ padding: "60px", textAlign: "center", fontFamily: "Segoe UI, sans-serif" }}>
+      <h2 style={{ fontSize: "32px" }}>🧠 Nirvana AI</h2>
+      <p style={{ color: "#666", maxWidth: "500px", margin: "16px auto", lineHeight: 1.6 }}>
+        Your mental health support companion is coming soon. Talk anonymously,
+        track your wellness, and access resources — anytime.
+      </p>
+      <button
+        style={{ marginTop: "20px", padding: "10px 24px", backgroundColor: "#7f77dd", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "15px" }}
+        onClick={() => window.history.back()}
+      >
+        ← Go Back
+      </button>
+    </div>
+  );
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -56,24 +74,37 @@ function App() {
         <Route path="/login/pharmacist" element={<PharmacistLogin />} />
         <Route path="/login/patient" element={<PatientLogin />} />
 
-        {/* Home/Dashboard routes */}
+        {/* Dashboard routes */}
         <Route path="/home/doctor" element={<DoctorHome />} />
         <Route path="/home/hod" element={<HODHome />} />
         <Route path="/home/reception" element={<ReceptionHome />} />
+        <Route path="/home/patient" element={<PatientHome />} />
+
+        {/* Reception sub-routes */}
         <Route path="/register-patient" element={<RegisterPatient />} />
         <Route path="/manage-patients" element={<ManagePatients />} />
         <Route path="/manage-appointments" element={<ManageAppointments />} />
+
+        {/* Doctor sub-routes */}
         <Route path="/doctor/appointments" element={<DoctorAppointments />} />
         <Route path="/doctor/patients" element={<DoctorPatients />} />
-        <Route path="/hod/manage-doctors" element={<ManageDoctors hodDepartment="Cardiology" />} />
+
+        {/* HOD sub-routes */}
+        <Route path="/hod/manage-doctors" element={<ManageDoctors />} />
         <Route path="/hod/reports" element={<DocReport />} />
+
+        {/* Pharmacist sub-routes */}
         <Route path="/pharmacist/home" element={<PharmacistHome />} />
         <Route path="/pharmacist/medicines-stock" element={<MedicinesStock />} />
         <Route path="/pharmacist/medicines-reorder" element={<MedicinesReorder />} />
         <Route path="/pharmacist/patient-medicine-track" element={<PatientMedicineTrack />} />
         <Route path="/pharmacist/medicines-expiry" element={<MedicinesExpiry />} />
-        <Route path="/home/patient" element={<PatientHome />} />
 
+        {/* Nirvana AI placeholder */}
+        <Route path="/nirvana" element={<NirvanaPlaceholder />} />
+
+        {/* Catch-all: redirect unknown paths back to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

@@ -1,199 +1,506 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import API_URL from "./config";
+import Toast from "./Toast";
 
-function ManagePatients() {
-  const [patients, setPatients] = useState([]);
-  const [beds, setBeds] = useState([]);
+function getInitials(name) {
+  if (!name) return "?";
+  return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+}
+
+const EMPTY_EDIT = (p) => ({
+  name: p.name || "", age: p.age || "", gender: p.gender || "",
+  phone: p.phone || "", address: p.address || "",
+  medical_history: p.medical_history || "", current_medication: p.current_medication || "",
+});
+
+export default function ManagePatients() {
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const recepName = location.state?.name || localStorage.getItem("reception_name") || "Receptionist";
+
+  const [patients,  setPatients]  = useState([]);
+  const [beds,      setBeds]      = useState([]);
+  const [search,    setSearch]    = useState("");
+  const [toast,     setToast]     = useState(null);
+
+  const [expandedId, setExpandedId] = useState(null);
+  const [editingId,  setEditingId]  = useState(null);
+  const [confirmId,  setConfirmId]  = useState(null);
+  const [editForm,   setEditForm]   = useState({});
+  const [saving,     setSaving]     = useState(false);
   const [selectedBed, setSelectedBed] = useState({});
-  const [expandedPatient, setExpandedPatient] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
 
-  // Fetch patients
   const fetchPatients = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:5000/patients");
+      const res  = await fetch(`${API_URL}/patients`);
       const data = await res.json();
       setPatients(Array.isArray(data.patients) ? data.patients : []);
-    } catch (error) {
-      console.error("Error fetching patients:", error);
-      setPatients([]);
-    }
+    } catch { setPatients([]); }
   };
 
-  // Fetch beds
   const fetchBeds = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:5000/beds");
+      const res  = await fetch(`${API_URL}/beds`);
       const data = await res.json();
       setBeds(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Error fetching beds:", error);
-      setBeds([]);
-    }
+    } catch { setBeds([]); }
   };
 
-  useEffect(() => {
-    fetchPatients();
-    fetchBeds();
-  }, []);
+  useEffect(() => { fetchPatients(); fetchBeds(); }, []);
 
-  // Assign bed
+  const availableBeds = beds.filter((b) => b.status === "Available");
+
+  const filtered = patients.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  /* ── assign bed ── */
   const assignBed = async (patientId) => {
     const bedId = selectedBed[patientId];
-    if (!bedId) {
-      alert("Select a bed first");
-      return;
-    }
-
+    if (!bedId) { setToast({ message: "Please select a bed first", type: "error" }); return; }
     try {
-      const res = await fetch("http://127.0.0.1:5000/assign_bed", {
+      const res  = await fetch(`${API_URL}/assign_bed`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ patient_id: patientId, bed_id: parseInt(bedId) }),
       });
       const data = await res.json();
-      alert(data.message || "Bed assigned successfully!");
-      fetchPatients();
-      fetchBeds();
-    } catch (error) {
-      console.error("Error assigning bed:", error);
-      alert("Failed to assign bed");
-    }
+      setToast({ message: data.message || "Bed assigned!", type: "success" });
+      fetchPatients(); fetchBeds();
+    } catch { setToast({ message: "Failed to assign bed", type: "error" }); }
   };
 
-  // Delete patient
-  const deletePatient = async (patientId) => {
-    if (!window.confirm("Are you sure you want to delete this patient?")) return;
-    try {
-      const res = await fetch(`http://127.0.0.1:5000/delete_patient/${patientId}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      alert(data.message || "Patient deleted!");
-      fetchPatients();
-    } catch (error) {
-      console.error("Error deleting patient:", error);
-      alert("Failed to delete patient");
-    }
+  /* ── edit ── */
+  const openEdit = (p) => {
+    setEditForm(EMPTY_EDIT(p));
+    setEditingId(p.id);
+    setConfirmId(null);
+    setExpandedId(p.id);
   };
+  const cancelEdit = () => { setEditingId(null); setEditForm({}); };
 
-  // Update patient (simple prompt-based update example)
-  const updatePatient = async (patient) => {
-    const newName = prompt("Enter new name:", patient.name);
-    if (!newName) return;
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      const res = await fetch(`http://127.0.0.1:5000/update_patient/${patient.id}`, {
+      const patient = patients.find((p) => p.id === editingId);
+      const res  = await fetch(`${API_URL}/update_patient/${editingId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...patient, name: newName }),
+        body: JSON.stringify({ ...patient, ...editForm }),
       });
       const data = await res.json();
-      alert(data.message || "Patient updated!");
+      setToast({ message: data.message || "Patient updated!", type: "success" });
+      cancelEdit();
       fetchPatients();
-    } catch (error) {
-      console.error("Error updating patient:", error);
-      alert("Failed to update patient");
-    }
+    } catch { setToast({ message: "Failed to update patient", type: "error" }); }
+    setSaving(false);
   };
 
-  // Filter patients based on search term
-  const filteredPatients = patients.filter((p) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  /* ── delete ── */
+  const handleDelete = async (id) => {
+    try {
+      const res  = await fetch(`${API_URL}/delete_patient/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      setToast({ message: data.message || "Patient deleted", type: "success" });
+      setConfirmId(null);
+      if (expandedId === id) setExpandedId(null);
+      fetchPatients();
+    } catch { setToast({ message: "Failed to delete patient", type: "error" }); }
+  };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>Manage Patients</h2>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      {/* Search bar */}
-      <input
-        type="text"
-        placeholder="Search patient by name..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        style={{ marginBottom: "10px", padding: "5px", width: "250px" }}
-      />
+        .mp-body { font-family: 'DM Sans', sans-serif; min-height: 100vh; background: #F8FAFC; color: #1E293B; }
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Age</th>
-            <th>Gender</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredPatients.map((p) => (
-            <React.Fragment key={p.id}>
-              {/* Row with basic info */}
-              <tr
-                onClick={() =>
-                  setExpandedPatient(expandedPatient === p.id ? null : p.id)
-                }
-                style={{ cursor: "pointer", borderBottom: "1px solid #ccc" }}
-              >
-                <td>{p.name}</td>
-                <td>{p.age}</td>
-                <td>{p.gender}</td>
-                <td>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updatePatient(p);
+        .mp-header {
+          background: #fff; border-bottom: 1px solid #E2E8F0; padding: 14px 40px;
+          display: flex; align-items: center; justify-content: space-between;
+          position: sticky; top: 0; z-index: 10;
+        }
+        .mp-avatar {
+          width: 44px; height: 44px; border-radius: 50%; background: #854F0B;
+          color: #fff; display: flex; align-items: center; justify-content: center;
+          font-weight: 700; font-size: 15px; flex-shrink: 0;
+        }
+
+        .mp-main { max-width: 880px; margin: 0 auto; padding: 32px 28px 60px; }
+
+        .mp-topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .mp-back-btn {
+          display: inline-flex; align-items: center; gap: 6px; background: none;
+          border: 1.5px solid #E2E8F0; border-radius: 8px; padding: 7px 16px;
+          font-size: 13px; font-weight: 600; color: #64748B; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; transition: border-color 0.15s, color 0.15s;
+          flex-shrink: 0;
+        }
+        .mp-back-btn:hover { border-color: #CBD5E1; color: #334155; }
+
+        .mp-search-wrap {
+          flex: 1; position: relative; min-width: 200px;
+        }
+        .mp-search-icon {
+          position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+          pointer-events: none;
+        }
+        .mp-search {
+          width: 100%; padding: 9px 12px 9px 38px;
+          border: 1.5px solid #E2E8F0; border-radius: 9px;
+          font-size: 14px; font-family: 'DM Sans', sans-serif; color: #334155;
+          outline: none; background: #fff; transition: border-color 0.15s;
+        }
+        .mp-search:focus { border-color: #FCD34D; }
+
+        .mp-count { font-size: 13px; color: #94A3B8; flex-shrink: 0; }
+
+        /* Table card */
+        .mp-table-card { background: #fff; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden; }
+
+        .mp-thead { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 150px; gap: 0; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; }
+        .mp-th { padding: 12px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #94A3B8; }
+
+        /* Patient row */
+        .mp-row-wrap { border-bottom: 1px solid #F1F5F9; }
+        .mp-row-wrap:last-child { border-bottom: none; }
+
+        .mp-row {
+          display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 150px;
+          align-items: center; cursor: pointer;
+          transition: background 0.12s;
+        }
+        .mp-row:hover { background: #FAFBFC; }
+        .mp-row.active { background: #FFFBEB; }
+
+        .mp-td { padding: 14px 16px; font-size: 14px; color: #334155; }
+        .mp-td-name { display: flex; align-items: center; gap: 10px; }
+        .mp-pat-avatar {
+          width: 34px; height: 34px; border-radius: 50%; background: #FEF3C7;
+          color: #B45309; display: flex; align-items: center; justify-content: center;
+          font-weight: 700; font-size: 12px; flex-shrink: 0;
+        }
+        .mp-pat-name { font-weight: 600; color: #0F172A; }
+
+        .mp-bed-chip {
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+        }
+        .mp-bed-assigned   { background: #DCFCE7; color: #16A34A; border: 1px solid #BBF7D0; }
+        .mp-bed-unassigned { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+
+        .mp-actions { display: flex; gap: 6px; padding: 14px 16px; }
+        .mp-btn-edit {
+          padding: 5px 14px; background: #EFF6FF; color: #1D4ED8;
+          border: 1px solid #BFDBFE; border-radius: 6px; font-size: 12px;
+          font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif;
+        }
+        .mp-btn-edit:hover { background: #DBEAFE; }
+        .mp-btn-del {
+          padding: 5px 14px; background: #FEF2F2; color: #DC2626;
+          border: 1px solid #FECACA; border-radius: 6px; font-size: 12px;
+          font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif;
+        }
+        .mp-btn-del:hover { background: #FEE2E2; }
+
+        /* Confirm bar */
+        .mp-confirm {
+          padding: 12px 16px; background: #FEF2F2; border-top: 1px solid #FECACA;
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        .mp-confirm-text { font-size: 13px; color: #DC2626; font-weight: 500; }
+        .mp-confirm-btns { display: flex; gap: 8px; }
+        .mp-confirm-yes { padding: 5px 14px; background: #DC2626; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .mp-confirm-no  { padding: 5px 14px; background: #fff; color: #64748B; border: 1px solid #E2E8F0; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+
+        /* Expanded panel */
+        .mp-expand { background: #FAFBFC; border-top: 1px solid #F1F5F9; padding: 20px 20px 20px; }
+
+        .mp-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin-bottom: 16px; }
+        .mp-info-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #94A3B8; margin-bottom: 2px; }
+        .mp-info-value { font-size: 13px; color: #334155; }
+
+        /* Edit form */
+        .mp-edit-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid #E2E8F0; }
+        .mp-edit-title { font-size: 13px; font-weight: 700; color: #0F172A; margin-bottom: 14px; }
+        .mp-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .mp-field { display: flex; flex-direction: column; gap: 5px; }
+        .mp-f-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; }
+        .mp-f-input, .mp-f-select, .mp-f-textarea {
+          padding: 8px 12px; border: 1.5px solid #E2E8F0; border-radius: 8px;
+          font-size: 13px; font-family: 'DM Sans', sans-serif; color: #334155;
+          outline: none; background: #fff; transition: border-color 0.15s;
+        }
+        .mp-f-input:focus, .mp-f-select:focus, .mp-f-textarea:focus { border-color: #FCD34D; }
+        .mp-f-textarea { resize: vertical; min-height: 70px; }
+        .mp-form-actions { display: flex; gap: 8px; margin-top: 14px; }
+        .mp-btn-save {
+          padding: 8px 22px; background: #F59E0B; color: #fff; border: none;
+          border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; transition: background 0.15s;
+        }
+        .mp-btn-save:hover { background: #D97706; }
+        .mp-btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+        .mp-btn-cancel-edit {
+          padding: 8px 22px; background: #fff; color: #64748B; border: 1.5px solid #E2E8F0;
+          border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+          font-family: 'DM Sans', sans-serif;
+        }
+
+        /* Bed assign */
+        .mp-bed-assign { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+        .mp-bed-label { font-size: 12px; font-weight: 600; color: #64748B; }
+        .mp-bed-select {
+          padding: 7px 12px; border: 1.5px solid #E2E8F0; border-radius: 8px;
+          font-size: 13px; font-family: 'DM Sans', sans-serif; color: #334155;
+          outline: none; background: #fff; transition: border-color 0.15s;
+        }
+        .mp-bed-select:focus { border-color: #FCD34D; }
+        .mp-btn-assign {
+          padding: 7px 18px; background: #16A34A; color: #fff; border: none;
+          border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; transition: background 0.15s;
+        }
+        .mp-btn-assign:hover { background: #15803D; }
+        .mp-no-beds { font-size: 13px; color: #DC2626; margin-top: 10px; }
+
+        /* Empty */
+        .mp-empty {
+          display: flex; flex-direction: column; align-items: center;
+          padding: 60px 24px; gap: 10px; text-align: center;
+        }
+        .mp-empty-icon { width: 56px; height: 56px; border-radius: 50%; background: #FEF3C7; display: flex; align-items: center; justify-content: center; }
+        .mp-empty-title { font-size: 15px; font-weight: 600; color: #334155; }
+        .mp-empty-sub   { font-size: 13px; color: #94A3B8; }
+
+        @media (max-width: 700px) {
+          .mp-header { padding: 12px 16px; }
+          .mp-main   { padding: 20px 14px 48px; }
+          .mp-thead  { display: none; }
+          .mp-row    { grid-template-columns: 1fr; }
+          .mp-td:not(.mp-td-name):not(:last-child) { display: none; }
+          .mp-info-grid { grid-template-columns: 1fr; }
+          .mp-form-grid { grid-template-columns: 1fr; }
+        }
+      `}</style>
+
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
+
+      <div className="mp-body">
+        {/* ── Header ── */}
+        <header className="mp-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="mp-avatar">
+              {recepName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+            </div>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 15, color: "#0F172A" }}>{recepName}</div>
+              <div style={{ fontSize: 12, color: "#94A3B8" }}>Manage Patients</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: "#94A3B8" }}>
+            {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+          </div>
+        </header>
+
+        <main className="mp-main">
+          {/* Top bar */}
+          <div className="mp-topbar">
+            <button className="mp-back-btn"
+              onClick={() => navigate("/home/reception", { state: { name: recepName } })}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2"
+                strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+              </svg>
+              Back to Home
+            </button>
+
+            <div className="mp-search-wrap">
+              <span className="mp-search-icon">
+                <svg width="14" height="14" fill="none" stroke="#94A3B8" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="8"/>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+              </span>
+              <input className="mp-search" type="text" placeholder="Search by patient name…"
+                value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <span className="mp-count">{filtered.length} patient{filtered.length !== 1 ? "s" : ""}</span>
+          </div>
+
+          {/* Table card */}
+          <div className="mp-table-card">
+            {/* Table head */}
+            <div className="mp-thead">
+              <div className="mp-th">Patient</div>
+              <div className="mp-th">Age</div>
+              <div className="mp-th">Gender</div>
+              <div className="mp-th">Bed</div>
+              <div className="mp-th">Actions</div>
+            </div>
+
+            {filtered.length === 0 ? (
+              <div className="mp-empty">
+                <div className="mp-empty-icon">
+                  <svg width="24" height="24" fill="none" stroke="#F59E0B" strokeWidth="1.8"
+                    strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                  </svg>
+                </div>
+                <div className="mp-empty-title">
+                  {search ? "No patients match your search" : "No patients registered yet"}
+                </div>
+                <div className="mp-empty-sub">
+                  {search ? "Try a different name." : "Register a new patient to get started."}
+                </div>
+              </div>
+            ) : (
+              filtered.map((p) => (
+                <div key={p.id} className="mp-row-wrap">
+                  {/* ── Main row ── */}
+                  <div
+                    className={`mp-row${expandedId === p.id ? " active" : ""}`}
+                    onClick={() => {
+                      if (editingId === p.id) return;
+                      setExpandedId(expandedId === p.id ? null : p.id);
+                      setConfirmId(null);
                     }}
-                    style={{ marginRight: "5px" }}
                   >
-                    Update
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deletePatient(p.id);
-                    }}
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
+                    <div className="mp-td mp-td-name">
+                      <div className="mp-pat-avatar">{getInitials(p.name)}</div>
+                      <div className="mp-pat-name">{p.name}</div>
+                    </div>
+                    <div className="mp-td">{p.age}</div>
+                    <div className="mp-td">{p.gender}</div>
+                    <div className="mp-td">
+                      {p.bed_id
+                        ? <span className="mp-bed-chip mp-bed-assigned">Bed {p.bed_id}</span>
+                        : <span className="mp-bed-chip mp-bed-unassigned">Unassigned</span>}
+                    </div>
+                    <div className="mp-actions" onClick={(e) => e.stopPropagation()}>
+                      <button className="mp-btn-edit" onClick={() => openEdit(p)}>Edit</button>
+                      <button className="mp-btn-del"
+                        onClick={() => { setConfirmId(p.id); setEditingId(null); setExpandedId(p.id); }}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Expanded row with full details */}
-              {expandedPatient === p.id && (
-                <tr>
-                  <td colSpan="4" style={{ background: "#f0f0f0", padding: "10px" }}>
-                    <p><b>Phone:</b> {p.phone}</p>
-                    <p><b>Address:</b> {p.address}</p>
-                    <p><b>Medical History:</b> {p.medical_history || "n/a"}</p>
-                    <p><b>Current Medication:</b> {p.current_medication || "n/a"}</p>
-                    <p><b>Bed:</b> {p.bed_id || "Not assigned"}</p>
+                  {/* ── Delete confirm ── */}
+                  {confirmId === p.id && (
+                    <div className="mp-confirm">
+                      <span className="mp-confirm-text">Delete {p.name}? This cannot be undone.</span>
+                      <div className="mp-confirm-btns">
+                        <button className="mp-confirm-yes" onClick={() => handleDelete(p.id)}>Delete</button>
+                        <button className="mp-confirm-no"  onClick={() => setConfirmId(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
 
-                    <select
-                      value={selectedBed[p.id] || ""}
-                      onChange={(e) =>
-                        setSelectedBed({ ...selectedBed, [p.id]: e.target.value })
-                      }
-                    >
-                      <option value="">Select Bed</option>
-                      {beds.map((b) => (
-                        <option key={b.bed_id} value={b.bed_id}>
-                          {b.bed_id} ({b.status})
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => assignBed(p.id)}
-                      style={{ marginLeft: "5px", padding: "5px 10px" }}
-                    >
-                      Assign
-                    </button>
-                  </td>
-                </tr>
-              )}
-            </React.Fragment>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                  {/* ── Expanded panel ── */}
+                  {expandedId === p.id && confirmId !== p.id && (
+                    <div className="mp-expand">
+                      {editingId === p.id ? (
+                        /* Edit form */
+                        <div className="mp-edit-section">
+                          <div className="mp-edit-title">Editing — {p.name}</div>
+                          <div className="mp-form-grid">
+                            {[
+                              { key: "name",    label: "Full Name", type: "text"   },
+                              { key: "age",     label: "Age",       type: "number" },
+                              { key: "phone",   label: "Phone",     type: "text"   },
+                              { key: "address", label: "Address",   type: "text"   },
+                            ].map(({ key, label, type }) => (
+                              <div key={key} className="mp-field">
+                                <label className="mp-f-label">{label}</label>
+                                <input className="mp-f-input" type={type}
+                                  value={editForm[key] || ""}
+                                  onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })} />
+                              </div>
+                            ))}
+                            <div className="mp-field">
+                              <label className="mp-f-label">Gender</label>
+                              <select className="mp-f-select" value={editForm.gender || ""}
+                                onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 12 }}>
+                            <div className="mp-field" style={{ marginBottom: 12 }}>
+                              <label className="mp-f-label">Medical History</label>
+                              <textarea className="mp-f-textarea"
+                                value={editForm.medical_history || ""}
+                                onChange={(e) => setEditForm({ ...editForm, medical_history: e.target.value })} />
+                            </div>
+                            <div className="mp-field">
+                              <label className="mp-f-label">Current Medication</label>
+                              <textarea className="mp-f-textarea"
+                                value={editForm.current_medication || ""}
+                                onChange={(e) => setEditForm({ ...editForm, current_medication: e.target.value })} />
+                            </div>
+                          </div>
+                          <div className="mp-form-actions">
+                            <button className="mp-btn-save" onClick={handleSave} disabled={saving}>
+                              {saving ? "Saving…" : "Save Changes"}
+                            </button>
+                            <button className="mp-btn-cancel-edit" onClick={cancelEdit}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Detail view */
+                        <>
+                          <div className="mp-info-grid">
+                            {[
+                              ["Phone",       p.phone          || "—"],
+                              ["Address",     p.address        || "—"],
+                              ["Medical History",    p.medical_history    || "None on record"],
+                              ["Current Medication", p.current_medication || "None on record"],
+                            ].map(([lbl, val]) => (
+                              <div key={lbl}>
+                                <div className="mp-info-label">{lbl}</div>
+                                <div className="mp-info-value">{val}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Bed assignment */}
+                          <div style={{ paddingTop: 14, borderTop: "1px solid #E2E8F0" }}>
+                            <div className="mp-bed-label">Assign Bed</div>
+                            {availableBeds.length > 0 ? (
+                              <div className="mp-bed-assign">
+                                <select className="mp-bed-select"
+                                  value={selectedBed[p.id] || ""}
+                                  onChange={(e) => setSelectedBed({ ...selectedBed, [p.id]: e.target.value })}>
+                                  <option value="">Select available bed</option>
+                                  {availableBeds.map((b) => (
+                                    <option key={b.bed_id} value={b.bed_id}>Bed {b.bed_id}</option>
+                                  ))}
+                                </select>
+                                <button className="mp-btn-assign" onClick={() => assignBed(p.id)}>
+                                  Assign
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="mp-no-beds">No available beds at this time.</p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </main>
+      </div>
+    </>
   );
 }
-
-export default ManagePatients;

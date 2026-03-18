@@ -1,167 +1,265 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import API_URL from "./config";
+import Toast from "./Toast";
 
-function PatientMedicineTrack() {
-  const [patients, setPatients] = useState([]);
+export default function PatientMedicineTrack() {
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const pharmName = location.state?.name || localStorage.getItem("pharmacist_name") || "Pharmacist";
+  const pharmINI  = pharmName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+
+  const [patients,  setPatients]  = useState([]);
   const [medicines, setMedicines] = useState([]);
-  const [formData, setFormData] = useState({
-    patient_id: "",
-    medicine_id: "",
-    quantity: "",
-    date_given: "",
-  });
-// Fetch all patients
-const fetchPatients = async () => {
-  try {
-    const res = await fetch("http://127.0.0.1:5000/patients");
-    const data = await res.json();
-
-    // ✅ Handle both array and object with "patients" key
-    if (Array.isArray(data)) {
-      setPatients(data);
-    } else if (data.patients && Array.isArray(data.patients)) {
-      setPatients(data.patients);
-    } else {
-      setPatients([]);
-    }
-  } catch (error) {
-    console.error("Error fetching patients:", error);
-    setPatients([]);
-  }
-};
-
-  // Fetch all medicines
-  const fetchMedicines = async () => {
-    try {
-      const res = await fetch("http://127.0.0.1:5000/medicines/stock");
-      const data = await res.json();
-      // Ensure data is an array
-      setMedicines(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Error fetching medicines:", error);
-      setMedicines([]);
-    }
-  };
+  const [form,      setForm]      = useState({ patient_id: "", medicine_id: "", quantity: "", date_given: "" });
+  const [toast,     setToast]     = useState(null);
+  const [busy,      setBusy]      = useState(false);
 
   useEffect(() => {
-    fetchPatients();
-    fetchMedicines();
+    (async () => {
+      try {
+        const [pRes, mRes] = await Promise.all([
+          fetch(`${API_URL}/patients`),
+          fetch(`${API_URL}/medicines/stock`),
+        ]);
+        const pData = await pRes.json();
+        const mData = await mRes.json();
+        setPatients(Array.isArray(pData.patients) ? pData.patients : []);
+        setMedicines(Array.isArray(mData) ? mData : []);
+      } catch { /* silently fail */ }
+    })();
   }, []);
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+  const selectedMed = medicines.find((m) => m.id === parseInt(form.medicine_id));
+  const stockLeft   = selectedMed?.stock_quantity ?? null;
+  const isOverStock = stockLeft !== null && parseInt(form.quantity) > stockLeft;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isOverStock) {
+      setToast({ message: `Quantity exceeds available stock (${stockLeft})`, type: "error" });
+      return;
+    }
+    setBusy(true);
     try {
-      const res = await fetch("http://127.0.0.1:5000/patient_medicines", {
+      const res  = await fetch(`${API_URL}/patient_medicines`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(form),
       });
       const data = await res.json();
       if (res.ok) {
-        alert(data.message);
-        setFormData({ patient_id: "", medicine_id: "", quantity: "", date_given: "" });
+        setToast({ message: data.message || "Medicine assigned successfully!", type: "success" });
+        setForm({ patient_id: "", medicine_id: "", quantity: "", date_given: "" });
+        // Refresh medicines to update stock
+        const mRes  = await fetch(`${API_URL}/medicines/stock`);
+        const mData = await mRes.json();
+        setMedicines(Array.isArray(mData) ? mData : []);
       } else {
-        alert(data.message || "Error assigning medicine");
+        setToast({ message: data.error || "Error assigning medicine", type: "error" });
       }
-    } catch (error) {
-      console.error("Error:", error);
-      alert("Failed to assign medicine");
+    } catch {
+      setToast({ message: "Failed to assign medicine. Please try again.", type: "error" });
     }
+    setBusy(false);
   };
 
+  const stockColor = stockLeft === null
+    ? "#94A3B8"
+    : stockLeft === 0
+      ? "#DC2626"
+      : stockLeft <= (selectedMed?.reorder_level ?? 0)
+        ? "#B45309"
+        : "#16A34A";
+
   return (
-    <div style={containerStyle}>
-      <h2>Assign Medicine to Patient</h2>
-      <form onSubmit={handleSubmit}>
-        <select
-          name="patient_id"
-          value={formData.patient_id}
-          onChange={handleChange}
-          required
-          style={inputStyle}
-        >
-          <option value="">Select Patient</option>
-          {Array.isArray(patients) && patients.length > 0 ? (
-            patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)
-          ) : (
-            <option disabled>No patients available</option>
-          )}
-        </select>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        <select
-          name="medicine_id"
-          value={formData.medicine_id}
-          onChange={handleChange}
-          required
-          style={inputStyle}
-        >
-          <option value="">Select Medicine</option>
-          {Array.isArray(medicines) && medicines.length > 0 ? (
-            medicines.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} (Stock: {m.stock_quantity})
-              </option>
-            ))
-          ) : (
-            <option disabled>No medicines available</option>
-          )}
-        </select>
+        .pm-body { font-family: 'DM Sans', sans-serif; min-height: 100vh; background: #F8FAFC; color: #1E293B; }
 
-        <input
-          type="number"
-          name="quantity"
-          placeholder="Quantity"
-          value={formData.quantity}
-          onChange={handleChange}
-          min="1"
-          max={
-            formData.medicine_id
-              ? medicines.find((m) => m.id === parseInt(formData.medicine_id))?.stock_quantity || 1
-              : 1
-          }
-          required
-          style={inputStyle}
-        />
+        .pm-header {
+          background: #fff; border-bottom: 1px solid #E2E8F0; padding: 14px 40px;
+          display: flex; align-items: center; justify-content: space-between;
+          position: sticky; top: 0; z-index: 10;
+        }
+        .pm-avatar {
+          width: 44px; height: 44px; border-radius: 50%; background: #5B21B6;
+          color: #fff; display: flex; align-items: center; justify-content: center;
+          font-weight: 700; font-size: 15px; flex-shrink: 0;
+        }
+        .pm-back-btn {
+          display: inline-flex; align-items: center; gap: 6px; background: none;
+          border: 1.5px solid #E2E8F0; border-radius: 8px; padding: 7px 16px;
+          font-size: 13px; font-weight: 600; color: #64748B; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; transition: border-color 0.15s;
+        }
+        .pm-back-btn:hover { border-color: #CBD5E1; color: #334155; }
 
-        <input
-          type="date"
-          name="date_given"
-          value={formData.date_given}
-          onChange={handleChange}
-          required
-          style={inputStyle}
-        />
+        .pm-main { max-width: 560px; margin: 0 auto; padding: 32px 24px 60px; }
 
-        <button type="submit" style={buttonStyle}>
-          Assign Medicine
-        </button>
-      </form>
-    </div>
+        .pm-page-title { font-size: 22px; font-weight: 700; color: #0F172A; margin-bottom: 6px; }
+        .pm-page-sub   { font-size: 14px; color: #64748B; margin-bottom: 28px; }
+
+        .pm-card { background: #fff; border: 1px solid #E2E8F0; border-radius: 14px; padding: 28px 28px; }
+        .pm-section-label {
+          font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+          color: #94A3B8; margin-bottom: 14px;
+        }
+
+        .pm-field { margin-bottom: 16px; }
+        .pm-label {
+          display: block; font-size: 12px; font-weight: 600; color: #64748B;
+          text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;
+        }
+        .pm-select, .pm-input {
+          width: 100%; padding: 10px 13px; border: 1.5px solid #E2E8F0; border-radius: 9px;
+          font-size: 14px; font-family: 'DM Sans', sans-serif; color: #334155;
+          outline: none; background: #fff; transition: border-color 0.15s;
+        }
+        .pm-select:focus, .pm-input:focus { border-color: #A78BFA; }
+        .pm-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px; }
+        .pm-input.error { border-color: #FECACA; }
+
+        .pm-stock-pill {
+          display: inline-flex; align-items: center; gap: 5px;
+          margin-top: 7px; padding: 4px 12px; border-radius: 20px;
+          font-size: 12px; font-weight: 600; border: 1px solid currentColor;
+        }
+
+        .pm-quantity-wrap { position: relative; }
+        .pm-qty-hint {
+          position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
+          font-size: 12px; font-weight: 500; pointer-events: none;
+        }
+
+        .pm-divider { height: 1px; background: #F1F5F9; margin: 20px 0; }
+
+        .pm-submit {
+          width: 100%; padding: 12px; background: #7C3AED; color: #fff;
+          border: none; border-radius: 9px; font-size: 15px; font-weight: 600;
+          cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s;
+        }
+        .pm-submit:hover    { background: #6D28D9; }
+        .pm-submit:disabled { opacity: 0.65; cursor: not-allowed; }
+
+        @media (max-width: 600px) {
+          .pm-header { padding: 12px 16px; }
+          .pm-main   { padding: 20px 14px 48px; }
+          .pm-card   { padding: 20px 18px; }
+        }
+      `}</style>
+
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
+
+      <div className="pm-body">
+        <header className="pm-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="pm-avatar">{pharmINI}</div>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 15, color: "#0F172A" }}>{pharmName}</div>
+              <div style={{ fontSize: 12, color: "#94A3B8" }}>Assign Medicine</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 13, color: "#94A3B8" }}>
+            {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+          </div>
+        </header>
+
+        <main className="pm-main">
+          <button className="pm-back-btn" style={{ marginBottom: 20 }}
+            onClick={() => navigate("/pharmacist/home", { state: { name: pharmName } })}>
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2"
+              strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Home
+          </button>
+
+          <div className="pm-page-title">Assign Medicine to Patient</div>
+          <div className="pm-page-sub">Dispense medication and update inventory in real time.</div>
+
+          <div className="pm-card">
+            <form onSubmit={handleSubmit}>
+              <p className="pm-section-label">Patient &amp; Medication</p>
+
+              <div className="pm-field">
+                <label className="pm-label">Patient</label>
+                <select className="pm-select" name="patient_id"
+                  value={form.patient_id} onChange={handleChange} required>
+                  <option value="">Select patient…</option>
+                  {patients.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pm-field">
+                <label className="pm-label">Medicine</label>
+                <select className="pm-select" name="medicine_id"
+                  value={form.medicine_id} onChange={handleChange} required>
+                  <option value="">Select medicine…</option>
+                  {medicines.map((m) => (
+                    <option key={m.id} value={m.id} disabled={m.stock_quantity === 0}>
+                      {m.name}{m.stock_quantity === 0 ? " — Out of stock" : ""}
+                    </option>
+                  ))}
+                </select>
+                {selectedMed && (
+                  <span className="pm-stock-pill" style={{ color: stockColor, borderColor: stockColor, background: stockColor + "18" }}>
+                    <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5"
+                      strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                      <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>
+                    </svg>
+                    {stockLeft} units in stock
+                  </span>
+                )}
+              </div>
+
+              <div className="pm-field">
+                <label className="pm-label">Quantity</label>
+                <div className="pm-quantity-wrap">
+                  <input
+                    className={`pm-input${isOverStock ? " error" : ""}`}
+                    type="number" name="quantity"
+                    placeholder="e.g. 2"
+                    value={form.quantity} onChange={handleChange}
+                    min="1"
+                    max={stockLeft ?? undefined}
+                    required
+                  />
+                  {stockLeft !== null && (
+                    <span className="pm-qty-hint" style={{ color: isOverStock ? "#DC2626" : "#94A3B8" }}>
+                      max {stockLeft}
+                    </span>
+                  )}
+                </div>
+                {isOverStock && (
+                  <p style={{ fontSize: 12, color: "#DC2626", marginTop: 5 }}>
+                    Exceeds available stock of {stockLeft} units.
+                  </p>
+                )}
+              </div>
+
+              <div className="pm-divider" />
+
+              <div className="pm-field" style={{ marginBottom: 20 }}>
+                <label className="pm-label">Date Given</label>
+                <input className="pm-input" type="date" name="date_given"
+                  value={form.date_given} onChange={handleChange} required />
+              </div>
+
+              <button className="pm-submit" type="submit" disabled={busy || isOverStock}>
+                {busy ? "Assigning…" : "Assign Medicine"}
+              </button>
+            </form>
+          </div>
+        </main>
+      </div>
+    </>
   );
 }
-
-const containerStyle = {
-  maxWidth: "500px",
-  margin: "50px auto",
-  padding: "20px",
-  border: "1px solid #ccc",
-  borderRadius: "10px",
-  backgroundColor: "#f9f9f9",
-};
-
-const inputStyle = { width: "100%", padding: "10px", margin: "8px 0", borderRadius: "5px" };
-const buttonStyle = {
-  width: "100%",
-  padding: "10px",
-  marginTop: "10px",
-  backgroundColor: "#8e44ad",
-  color: "#fff",
-  border: "none",
-  borderRadius: "5px",
-  cursor: "pointer",
-};
-
-export default PatientMedicineTrack;
