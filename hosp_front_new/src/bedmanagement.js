@@ -362,6 +362,7 @@ export default function BedManagement() {
           background-repeat: no-repeat;
           background-position: right 12px center;
           padding-right: 34px;
+          position: relative; z-index: 999;
         }
         .bm-modal-select:focus { border-color: #FCD34D; }
 

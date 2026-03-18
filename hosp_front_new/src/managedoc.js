@@ -16,6 +16,7 @@ export default function ManageDoctors() {
   const location = useLocation();
   const navigate  = useNavigate();
 
+  const hodId         = location.state?.id         || localStorage.getItem("hod_id")         || null;
   const hodName       = location.state?.name       || localStorage.getItem("hod_name")       || "HOD";
   const hodDepartment = location.state?.department || localStorage.getItem("hod_department") || "";
   const hodINI = getInitials(hodName);
@@ -32,7 +33,7 @@ export default function ManageDoctors() {
   const fetchDoctors = useCallback(async () => {
     setLoading(true);
     try {
-      const q = hodDepartment ? `?department=${encodeURIComponent(hodDepartment)}` : "";
+      const q = hodId ? `?hod_id=${hodId}` : (hodDepartment ? `?department=${encodeURIComponent(hodDepartment)}` : "");
       const res  = await fetch(`${API_URL}/hod/doctors${q}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -41,7 +42,7 @@ export default function ManageDoctors() {
       setToast({ message: "Failed to load doctors", type: "error" });
     }
     setLoading(false);
-  }, [hodDepartment]);
+  }, [hodId, hodDepartment]);
 
   useEffect(() => { fetchDoctors(); }, [fetchDoctors]);
 

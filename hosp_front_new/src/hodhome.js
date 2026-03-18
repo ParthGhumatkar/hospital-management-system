@@ -17,6 +17,7 @@ export default function HODHome() {
   const navigate  = useNavigate();
   const location  = useLocation();
 
+  const hodId      = location.state?.id         || localStorage.getItem("hod_id")         || null;
   const name       = location.state?.name       || localStorage.getItem("hod_name")       || "HOD";
   const department = location.state?.department || localStorage.getItem("hod_department") || "";
 
@@ -30,25 +31,28 @@ export default function HODHome() {
   useEffect(() => {
     (async () => {
       try {
-        const query = department ? `?department=${encodeURIComponent(department)}` : "";
+        const query    = hodId ? `?hod_id=${hodId}` : (department ? `?department=${encodeURIComponent(department)}` : "");
+        const perfQuery = hodId ? `?hod_id=${hodId}` : "";
         const [docRes, perfRes] = await Promise.all([
           fetch(`${API_URL}/hod/doctors${query}`),
-          fetch(`${API_URL}/doctor_performance`),
+          fetch(`${API_URL}/hod/reports${perfQuery}`),
         ]);
         const docData  = await docRes.json();
         const perfData = await perfRes.json();
-        const list = docData.doctors || [];
-        const uniqueDepts = new Set(list.map((d) => d.department).filter(Boolean));
+        const list     = docData.doctors || [];
+        const perfList = perfData.reports || [];
+        const uniqueDepts   = new Set(list.map((d) => d.department).filter(Boolean));
+        const uniqueDocIds  = new Set(perfList.map((r) => r.doctor_id));
         setDoctors(list);
         setStats({
           doctors:     list.length,
           departments: uniqueDepts.size || (department ? 1 : 0),
-          reports:     (perfData.performance || []).length,
+          reports:     uniqueDocIds.size,
         });
       } catch { /* silently fail */ }
       setLoading(false);
     })();
-  }, [department]);
+  }, [hodId, department]);
 
   const handleLogout = () => {
     localStorage.removeItem("hod_name");
@@ -56,7 +60,7 @@ export default function HODHome() {
     navigate("/");
   };
 
-  const goWith = (path) => navigate(path, { state: { name, department } });
+  const goWith = (path) => navigate(path, { state: { id: hodId, name, department } });
 
   const statCards = [
     {

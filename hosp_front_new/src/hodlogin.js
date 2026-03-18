@@ -24,6 +24,7 @@ export default function HODLogin() {
       const data = await res.json();
       if (res.ok && data.status === "success") {
         const { id, name, department } = data;
+        localStorage.setItem("hod_id",         String(id));
         localStorage.setItem("hod_name",       name);
         localStorage.setItem("hod_department", department);
         navigate("/home/hod", { state: { id, name, department } });

@@ -130,6 +130,7 @@ export default function AssignMedicine() {
           appearance: none;
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
           background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px;
+          position: relative; z-index: 999;
         }
         .am-input.error { border-color: #FECACA; }
 

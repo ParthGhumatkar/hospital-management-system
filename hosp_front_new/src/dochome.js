@@ -65,16 +65,16 @@ export default function DoctorHome() {
     Promise.all([
       fetch(`${API_URL}/appointments/${doctorId}`).then((r) => r.json()),
       fetch(`${API_URL}/appointments/upcoming/${doctorId}`).then((r) => r.json()),
-      fetch(`${API_URL}/doctor/${doctorId}/patients`).then((r) => r.json()),
+      fetch(`${API_URL}/doctor/${doctorId}/patient_count`).then((r) => r.json()),
       fetch(`${API_URL}/hod/doctors`).then((r) => r.json()),
     ])
-      .then(([appData, upData, patData, docData]) => {
+      .then(([appData, upData, countData, docData]) => {
         const all = appData.appointments || [];
         const todayAppts = all.filter((a) => a.date === today);
 
         setStats({
           today: todayAppts.length,
-          active: (patData.patients || []).length,
+          active: countData.count || 0,
           completed: todayAppts.filter((a) => a.status === "Completed").length,
         });
 

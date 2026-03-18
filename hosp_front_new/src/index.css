@@ -11,3 +11,13 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+select {
+  position: relative;
+  z-index: 999;
+}
+
+select option {
+  position: relative;
+  z-index: 9999;
+}

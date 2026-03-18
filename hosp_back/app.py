@@ -4,7 +4,6 @@ import psycopg2
 import psycopg2.extras
 from datetime import datetime, date, time, timedelta
 import joblib
-import pandas as pd
 import bcrypt
 import os
 from dotenv import load_dotenv
@@ -692,7 +691,32 @@ def get_doctor_patients(doctor_id):
             db.close()
 
 
-# ── Get Doctors by HOD Department ─────────────────────────────────────────────
+# ── Doctor Patient Count (distinct patients with any appointment) ──────────────
+@app.route('/doctor/<int:doctor_id>/patient_count', methods=['GET'])
+def get_doctor_patient_count(doctor_id):
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor()
+        cursor.execute(
+            "SELECT COUNT(DISTINCT a.patient_id) FROM appointments a WHERE a.doctor_id = %s",
+            (doctor_id,)
+        )
+        count = cursor.fetchone()[0]
+        return jsonify({"count": count})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
+# ── Get Doctors for HOD's Department ──────────────────────────────────────────
+# Accepts ?hod_id=<id> (preferred — looks up department server-side) or
+# ?department=<name> (fallback when hod_id is unavailable).
 @app.route('/hod/doctors', methods=['GET'])
 def get_doctors_by_hod():
     db = None
@@ -700,20 +724,98 @@ def get_doctors_by_hod():
     try:
         db = get_db_connection()
         cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        hod_id     = request.args.get('hod_id')
         department = request.args.get('department')
+
+        if hod_id:
+            cursor.execute("SELECT department FROM hod WHERE id = %s", (hod_id,))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({"error": "HOD not found"}), 404
+            department = row['department']
+
         if department:
             cursor.execute(
-                "SELECT id, name, email, specialization, department, phone "
-                "FROM doctors WHERE department=%s",
+                "SELECT id, name, email, specialization, phone, department "
+                "FROM doctors "
+                "WHERE department = %s "
+                "ORDER BY name",
                 (department,)
             )
         else:
             cursor.execute(
-                "SELECT id, name, email, specialization, department, phone FROM doctors"
+                "SELECT id, name, email, specialization, phone, department "
+                "FROM doctors "
+                "ORDER BY department, name"
             )
+
         doctors = [dict(r) for r in cursor.fetchall()]
         return jsonify({"doctors": doctors})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
+# ── HOD Performance Reports ────────────────────────────────────────────────────
+# Accepts ?hod_id=<id> (required) and optional ?month=<YYYY-MM-DD>.
+# Resolves the HOD's department from the hod table, then returns
+# doctor_performance rows only for doctors in that department.
+@app.route('/hod/reports', methods=['GET'])
+def get_hod_reports():
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        hod_id = request.args.get('hod_id')
+        month  = request.args.get('month')
+
+        if not hod_id:
+            return jsonify({"error": "hod_id is required"}), 400
+
+        cursor.execute("SELECT department FROM hod WHERE id = %s", (hod_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"error": "HOD not found"}), 404
+        department = row['department']
+
+        if month:
+            cursor.execute("""
+                SELECT dp.id, dp.doctor_id, d.name, d.department, dp.month,
+                       dp.total      AS total_appointments,
+                       dp.completed  AS completed_appointments,
+                       dp.missed     AS missed_appointments,
+                       dp.avg_consultation_time,
+                       dp.avg_patient_feedback
+                FROM doctor_performance dp
+                JOIN doctors d ON dp.doctor_id = d.id
+                WHERE d.department = %s AND dp.month = %s
+                ORDER BY dp.month DESC, d.name
+            """, (department, month))
+        else:
+            cursor.execute("""
+                SELECT dp.id, dp.doctor_id, d.name, d.department, dp.month,
+                       dp.total      AS total_appointments,
+                       dp.completed  AS completed_appointments,
+                       dp.missed     AS missed_appointments,
+                       dp.avg_consultation_time,
+                       dp.avg_patient_feedback
+                FROM doctor_performance dp
+                JOIN doctors d ON dp.doctor_id = d.id
+                WHERE d.department = %s
+                ORDER BY dp.month DESC, d.name
+            """, (department,))
+
+        reports = serialize_rows(cursor.fetchall())
+        return jsonify({"reports": reports})
+    except Exception as e:
+        print("ERROR /hod/reports:", str(e))
         return jsonify({"error": str(e)}), 500
     finally:
         if cursor:
@@ -785,26 +887,33 @@ def get_doctor_performance():
         month = request.args.get("month")
         if month:
             cursor.execute("""
-                SELECT d.id, d.name, d.department, dp.month,
-                       dp.total_appointments, dp.completed_appointments,
-                       dp.missed_appointments, dp.avg_consultation_time,
+                SELECT dp.doctor_id, d.id, d.name, d.department, dp.month,
+                       dp.total      AS total_appointments,
+                       dp.completed  AS completed_appointments,
+                       dp.missed     AS missed_appointments,
+                       dp.avg_consultation_time,
                        dp.avg_patient_feedback
                 FROM doctor_performance dp
                 JOIN doctors d ON dp.doctor_id = d.id
                 WHERE dp.month = %s
+                ORDER BY dp.month DESC, d.name
             """, (month,))
         else:
             cursor.execute("""
-                SELECT d.id, d.name, d.department, dp.month,
-                       dp.total_appointments, dp.completed_appointments,
-                       dp.missed_appointments, dp.avg_consultation_time,
+                SELECT dp.doctor_id, d.id, d.name, d.department, dp.month,
+                       dp.total      AS total_appointments,
+                       dp.completed  AS completed_appointments,
+                       dp.missed     AS missed_appointments,
+                       dp.avg_consultation_time,
                        dp.avg_patient_feedback
                 FROM doctor_performance dp
                 JOIN doctors d ON dp.doctor_id = d.id
+                ORDER BY dp.month DESC, d.name
             """)
         data = serialize_rows(cursor.fetchall())
         return jsonify({"performance": data})
     except Exception as e:
+        print("ERROR /doctor_performance:", str(e))
         return jsonify({"error": str(e)}), 500
     finally:
         if cursor:
@@ -822,8 +931,10 @@ def get_single_doctor_performance(doctor_id):
         cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
             SELECT d.id, d.name, d.department, dp.month,
-                   dp.total_appointments, dp.completed_appointments,
-                   dp.missed_appointments, dp.avg_consultation_time,
+                   dp.total      AS total_appointments,
+                   dp.completed  AS completed_appointments,
+                   dp.missed     AS missed_appointments,
+                   dp.avg_consultation_time,
                    dp.avg_patient_feedback
             FROM doctor_performance dp
             JOIN doctors d ON dp.doctor_id = d.id

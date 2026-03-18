@@ -164,7 +164,7 @@ export default function ManagePatients() {
         .mp-count { font-size: 13px; color: #94A3B8; flex-shrink: 0; }
 
         /* Table card */
-        .mp-table-card { background: #fff; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden; }
+        .mp-table-card { background: #fff; border: 1px solid #E2E8F0; border-radius: 14px; overflow: visible; }
 
         .mp-thead { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 150px; gap: 0; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; }
         .mp-th { padding: 12px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #94A3B8; }
@@ -239,6 +239,7 @@ export default function ManagePatients() {
           font-size: 13px; font-family: 'DM Sans', sans-serif; color: #334155;
           outline: none; background: #fff; transition: border-color 0.15s;
         }
+        .mp-f-select { position: relative; z-index: 999; }
         .mp-f-input:focus, .mp-f-select:focus, .mp-f-textarea:focus { border-color: #FCD34D; }
         .mp-f-textarea { resize: vertical; min-height: 70px; }
         .mp-form-actions { display: flex; gap: 8px; margin-top: 14px; }
@@ -262,6 +263,7 @@ export default function ManagePatients() {
           padding: 7px 12px; border: 1.5px solid #E2E8F0; border-radius: 8px;
           font-size: 13px; font-family: 'DM Sans', sans-serif; color: #334155;
           outline: none; background: #fff; transition: border-color 0.15s;
+          position: relative; z-index: 999;
         }
         .mp-bed-select:focus { border-color: #FCD34D; }
         .mp-btn-assign {

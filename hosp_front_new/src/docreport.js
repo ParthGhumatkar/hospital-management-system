@@ -19,9 +19,10 @@ export default function DocReport() {
   const navigate = useNavigate();
 
   /* state may come from doctor dashboard or HOD dashboard */
-  const callerName = location.state?.name || location.state?.hodName || null;
+  const callerName     = location.state?.name || location.state?.hodName || null;
   const callerIsDoctor = !!location.state?.doctorId;
-  const callerId = location.state?.doctorId || null;
+  const callerId       = location.state?.doctorId || null;
+  const hodId          = location.state?.id || localStorage.getItem("hod_id") || null;
 
   const [performanceData, setPerformanceData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,18 +36,30 @@ export default function DocReport() {
     setLoading(true);
     setHasError(false);
     try {
-      const query = monthFilter ? `?month=${monthFilter}-01` : "";
-      const res = await fetch(`${API_URL}/doctor_performance${query}`);
+      let url;
+      if (!callerIsDoctor && hodId) {
+        const params = new URLSearchParams({ hod_id: hodId });
+        if (monthFilter) params.set("month", `${monthFilter}-01`);
+        url = `${API_URL}/hod/reports?${params}`;
+      } else {
+        const query = monthFilter ? `?month=${monthFilter}-01` : "";
+        url = `${API_URL}/doctor_performance${query}`;
+      }
+      const res  = await fetch(url);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setPerformanceData(data.performance || []);
+      setPerformanceData(data.reports || data.performance || []);
     } catch {
       setHasError(true);
     }
     setLoading(false);
-  }, [monthFilter]);
+  }, [callerIsDoctor, hodId, monthFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const uniqueDoctors = [...new Map(
+    performanceData.map((d) => [d.doctor_id, d])
+  ).values()];
 
   const handleDoctorClick = (id) => { if (!compareMode) setSelectedDoctorId(id); };
 
@@ -318,14 +331,14 @@ export default function DocReport() {
           </div>
 
           {/* Doctor selector */}
-          {!loading && !hasError && performanceData.length > 0 && (
+          {!loading && !hasError && uniqueDoctors.length > 0 && (
             <>
               <p className="dr-section-title">
                 {compareMode ? "Select Doctors to Compare" : "Select a Doctor"}
               </p>
               <div className="dr-card" style={{ padding: "18px 22px" }}>
                 <div className="dr-doctor-list">
-                  {performanceData.map((doc) => (
+                  {uniqueDoctors.map((doc) => (
                     <div key={doc.id}>
                       {compareMode ? (
                         <label
