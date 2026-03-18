@@ -1364,6 +1364,47 @@ def patient_profile(patient_id):
             db.close()
 
 
+# ── Patient Medical Records ────────────────────────────────────────────────────
+# patient_id = patient_accounts.id (portal account).
+# Resolves to patients table via phone, returns medical/bed/doctor data.
+@app.route('/patient_medical_records/<int:patient_id>', methods=['GET'])
+def patient_medical_records(patient_id):
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT p.id, p.name, p.medical_history,
+                   p.current_medication, p.insurance_provider,
+                   p.policy_number, p.bed_id,
+                   b.bed_number,
+                   d.name        AS doctor_name,
+                   d.specialization
+            FROM patients p
+            LEFT JOIN beds             b  ON p.bed_id      = b.id
+            LEFT JOIN appointments     a  ON p.id          = a.patient_id
+            LEFT JOIN doctors          d  ON a.doctor_id   = d.id
+            LEFT JOIN patient_accounts pa ON pa.phone      = p.phone
+            WHERE pa.id = %s
+            ORDER BY a.date DESC
+            LIMIT 1
+        """, (patient_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"record": None})
+        record = serialize_row(row)
+        return jsonify({"record": record})
+    except Exception as e:
+        print("ERROR /patient_medical_records:", str(e))
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
 # ── Patient Appointments ───────────────────────────────────────────────────────
 # account_id = patient_accounts.id (what patient_login returns).
 # Resolves the matching patients.id via phone number, then queries appointments.

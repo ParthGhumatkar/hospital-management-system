@@ -93,6 +93,7 @@ export default function PatientHome() {
   const patientName = state?.name || "Patient";
 
   const [profile,      setProfile]      = useState(null);
+  const [medRecord,    setMedRecord]    = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [expanded,     setExpanded]     = useState({
@@ -109,14 +110,17 @@ export default function PatientHome() {
     if (!patientId) { navigate("/"); return; }
     (async () => {
       try {
-        const [profileRes, apptRes] = await Promise.all([
+        const [profileRes, apptRes, medRes] = await Promise.all([
           fetch(`${API_URL}/patient_profile/${patientId}`),
           fetch(`${API_URL}/patient_appointments/${patientId}`),
+          fetch(`${API_URL}/patient_medical_records/${patientId}`),
         ]);
         const pd = await profileRes.json();
         const ad = await apptRes.json();
+        const md = await medRes.json();
         setProfile(pd.profile || null);
         setAppointments(ad.appointments || []);
+        setMedRecord(md.record || null);
       } catch { /* silently fail */ }
       finally { setLoading(false); }
     })();
@@ -308,6 +312,25 @@ export default function PatientHome() {
         }
         .ph-nirvana-btn:hover { background: #6f67cc; }
 
+        /* Medical record sections */
+        .ph-med-sect {
+          display: flex; align-items: center; gap: 7px;
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.07em; color: #0F766E;
+          margin: 16px 0 6px; padding-bottom: 5px;
+          border-bottom: 1px solid #CCFBF1;
+        }
+        .ph-med-sect:first-child { margin-top: 4px; }
+        .ph-med-icon {
+          width: 22px; height: 22px; border-radius: 6px; background: #F0FDFA;
+          display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .ph-med-value {
+          font-size: 14px; color: #334155; line-height: 1.6;
+          white-space: pre-wrap; padding-bottom: 2px;
+        }
+        .ph-med-value.muted { color: #94A3B8; font-style: italic; }
+
         /* Loading */
         .ph-loading {
           display: flex; align-items: center; justify-content: center;
@@ -379,7 +402,7 @@ export default function PatientHome() {
                 )}
               </Card>
 
-              {/* ── 2. Medical Records (dedicated card for quick scan) ── */}
+              {/* ── 2. Medical Records ── */}
               <Card
                 id="medical"
                 expanded={expanded.medical}
@@ -387,17 +410,100 @@ export default function PatientHome() {
                 icon={iconMedical}
                 title="Medical Records"
               >
-                <EmptyState
-                  icon={
-                    <svg width="22" height="22" fill="none" stroke="#93C5FD" strokeWidth="1.6"
-                      strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                      <polyline points="14 2 14 8 20 8"/>
-                    </svg>
-                  }
-                  title="Medical records managed by hospital"
-                  sub="Your diagnosis, medication and bed details are updated by your doctor and reception."
-                />
+                {medRecord ? (
+                  <>
+                    {/* Bed */}
+                    <div className="ph-med-sect">
+                      <div className="ph-med-icon">
+                        <svg width="13" height="13" fill="none" stroke="#0F766E" strokeWidth="2.2"
+                          strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                          <path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8"/>
+                          <path d="M2 14h20M6 14V9a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/>
+                        </svg>
+                      </div>
+                      Bed Assignment
+                    </div>
+                    <div className={`ph-med-value${!medRecord.bed_number ? " muted" : ""}`}>
+                      {medRecord.bed_number ? `Bed ${medRecord.bed_number}` : "Not assigned"}
+                    </div>
+
+                    {/* Doctor */}
+                    <div className="ph-med-sect">
+                      <div className="ph-med-icon">
+                        <svg width="13" height="13" fill="none" stroke="#0F766E" strokeWidth="2.2"
+                          strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                          <circle cx="12" cy="7" r="4"/>
+                        </svg>
+                      </div>
+                      Assigned Doctor
+                    </div>
+                    <div className={`ph-med-value${!medRecord.doctor_name ? " muted" : ""}`}>
+                      {medRecord.doctor_name
+                        ? `Dr. ${medRecord.doctor_name}${medRecord.specialization ? ` · ${medRecord.specialization}` : ""}`
+                        : "Not assigned"}
+                    </div>
+
+                    {/* Medical history */}
+                    <div className="ph-med-sect">
+                      <div className="ph-med-icon">
+                        <svg width="13" height="13" fill="none" stroke="#0F766E" strokeWidth="2.2"
+                          strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                          <polyline points="14 2 14 8 20 8"/>
+                          <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                      </div>
+                      Medical History
+                    </div>
+                    <div className={`ph-med-value${!medRecord.medical_history ? " muted" : ""}`}>
+                      {medRecord.medical_history || "None on record"}
+                    </div>
+
+                    {/* Medication */}
+                    <div className="ph-med-sect">
+                      <div className="ph-med-icon">
+                        <svg width="13" height="13" fill="none" stroke="#0F766E" strokeWidth="2.2"
+                          strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                          <path d="M10.5 20H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H20a2 2 0 0 1 2 2v3"/>
+                          <circle cx="18" cy="18" r="3"/><path d="m22 22-1.5-1.5"/>
+                        </svg>
+                      </div>
+                      Current Medication
+                    </div>
+                    <div className={`ph-med-value${!medRecord.current_medication ? " muted" : ""}`}>
+                      {medRecord.current_medication || "None"}
+                    </div>
+
+                    {/* Insurance */}
+                    <div className="ph-med-sect">
+                      <div className="ph-med-icon">
+                        <svg width="13" height="13" fill="none" stroke="#0F766E" strokeWidth="2.2"
+                          strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                      </div>
+                      Insurance
+                    </div>
+                    <div className={`ph-med-value${!medRecord.insurance_provider ? " muted" : ""}`}>
+                      {medRecord.insurance_provider
+                        ? `${medRecord.insurance_provider}${medRecord.policy_number ? ` · Policy: ${medRecord.policy_number}` : ""}`
+                        : "No insurance on file"}
+                    </div>
+                  </>
+                ) : (
+                  <EmptyState
+                    icon={
+                      <svg width="22" height="22" fill="none" stroke="#93C5FD" strokeWidth="1.6"
+                        strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                    }
+                    title="No hospital record linked"
+                    sub="Visit reception to register. Your medical details will appear here once linked."
+                  />
+                )}
               </Card>
 
               {/* ── 3. Upcoming Appointments ── */}
