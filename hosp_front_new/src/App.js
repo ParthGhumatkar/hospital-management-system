@@ -24,6 +24,7 @@ import PharmacistHome from "./pharmacisthome";
 import RegisterPatient from "./patientregistry";
 import ManagePatients from "./managepatient";
 import ManageAppointments from "./manageappointments";
+import BedManagement from "./bedmanagement";
 
 import DoctorAppointments from "./docappointment";
 import DoctorPatients from "./docpatients";
@@ -34,7 +35,11 @@ import DocReport from "./docreport";
 import MedicinesStock from "./checkstock";
 import MedicinesReorder from "./reorder";
 import PatientMedicineTrack from "./patientmedi";
+import AssignMedicine from "./assignmedicine";
+import AllPatientMedicines from "./allpatientmedicines";
 import MedicinesExpiry from "./expiry";
+
+import NirvanaChat from "./nirvanachat";
 
 function NirvanaPlaceholder() {
   return (
@@ -84,6 +89,7 @@ function App() {
         <Route path="/register-patient" element={<RegisterPatient />} />
         <Route path="/manage-patients" element={<ManagePatients />} />
         <Route path="/manage-appointments" element={<ManageAppointments />} />
+        <Route path="/bedmanagement" element={<BedManagement />} />
 
         {/* Doctor sub-routes */}
         <Route path="/doctor/appointments" element={<DoctorAppointments />} />
@@ -97,11 +103,16 @@ function App() {
         <Route path="/pharmacist/home" element={<PharmacistHome />} />
         <Route path="/pharmacist/medicines-stock" element={<MedicinesStock />} />
         <Route path="/pharmacist/medicines-reorder" element={<MedicinesReorder />} />
-        <Route path="/pharmacist/patient-medicine-track" element={<PatientMedicineTrack />} />
+        <Route path="/pharmacist/patient-medicine-track" element={<AllPatientMedicines />} />
+        <Route path="/pharmacist/assign-medicine" element={<AssignMedicine />} />
         <Route path="/pharmacist/medicines-expiry" element={<MedicinesExpiry />} />
 
-        {/* Nirvana AI placeholder */}
-        <Route path="/nirvana" element={<NirvanaPlaceholder />} />
+        {/* Patient sub-routes */}
+        <Route path="/patient/medicines" element={<PatientMedicineTrack />} />
+
+        {/* Nirvana AI */}
+        <Route path="/nirvana"     element={<NirvanaPlaceholder />} />
+        <Route path="/nirvanachat" element={<NirvanaChat />} />
 
         {/* Catch-all: redirect unknown paths back to home */}
         <Route path="*" element={<Navigate to="/" replace />} />

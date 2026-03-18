@@ -43,13 +43,15 @@ export default function ManagePatients() {
     try {
       const res  = await fetch(`${API_URL}/beds`);
       const data = await res.json();
+      console.log("Beds from API:", data);
       setBeds(Array.isArray(data) ? data : []);
     } catch { setBeds([]); }
   };
 
   useEffect(() => { fetchPatients(); fetchBeds(); }, []);
 
-  const availableBeds = beds.filter((b) => b.status === "Available");
+  const availableBeds = beds.filter((b) => b.status?.toLowerCase() === "available");
+  console.log("Available beds:", availableBeds.map((b) => ({ id: b.id, bed_number: b.bed_number, status: b.status })));
 
   const filtered = patients.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
@@ -59,11 +61,15 @@ export default function ManagePatients() {
   const assignBed = async (patientId) => {
     const bedId = selectedBed[patientId];
     if (!bedId) { setToast({ message: "Please select a bed first", type: "error" }); return; }
+    const selectedBedId = parseInt(bedId);
+    console.log("Sending bed_id:", selectedBedId);
+    console.log("Full bed object:", availableBeds.find(b => b.id === selectedBedId));
+    console.log("All available beds:", availableBeds.map(b => ({ id: b.id, number: b.bed_number })));
     try {
-      const res  = await fetch(`${API_URL}/assign_bed`, {
+      const res  = await fetch(`${API_URL}/beds/assign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patient_id: patientId, bed_id: parseInt(bedId) }),
+        body: JSON.stringify({ patient_id: patientId, bed_id: selectedBedId }),
       });
       const data = await res.json();
       setToast({ message: data.message || "Bed assigned!", type: "success" });
@@ -480,7 +486,7 @@ export default function ManagePatients() {
                                   onChange={(e) => setSelectedBed({ ...selectedBed, [p.id]: e.target.value })}>
                                   <option value="">Select available bed</option>
                                   {availableBeds.map((b) => (
-                                    <option key={b.bed_id} value={b.bed_id}>Bed {b.bed_id}</option>
+                                    <option key={b.id} value={b.id}>{b.bed_number}</option>
                                   ))}
                                 </select>
                                 <button className="mp-btn-assign" onClick={() => assignBed(p.id)}>

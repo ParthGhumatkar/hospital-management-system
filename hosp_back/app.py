@@ -371,7 +371,7 @@ def delete_patient(patient_id):
             db.close()
 
 
-# ── Get Beds ───────────────────────────────────────────────────────────────────
+# ── Get Beds (with occupying patient name) ─────────────────────────────────────
 @app.route("/beds")
 def get_beds():
     db = None
@@ -379,8 +379,15 @@ def get_beds():
     try:
         db = get_db_connection()
         cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute("SELECT * FROM beds")
+        cursor.execute("""
+            SELECT b.id, b.bed_number, b.status,
+                   p.name AS patient_name
+            FROM beds b
+            LEFT JOIN patients p ON b.id = p.bed_id
+            ORDER BY b.bed_number
+        """)
         beds = serialize_rows(cursor.fetchall())
+        print("Beds being returned:", [(b['id'], b['bed_number']) for b in beds])
         return jsonify(beds)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -391,7 +398,93 @@ def get_beds():
             db.close()
 
 
-# ── Assign Bed ─────────────────────────────────────────────────────────────────
+# ── Get Unassigned Patients (no bed yet) ───────────────────────────────────────
+@app.route("/patients_unassigned")
+def get_unassigned_patients():
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            "SELECT id, name FROM patients WHERE bed_id IS NULL ORDER BY name"
+        )
+        patients = [dict(r) for r in cursor.fetchall()]
+        return jsonify({"patients": patients})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
+# ── Assign Bed (new clean endpoint) ────────────────────────────────────────────
+@app.route('/beds/assign', methods=['POST'])
+def beds_assign():
+    data = request.get_json()
+    print("bed_id received:", data.get('bed_id'))
+    print("patient_id received:", data.get('patient_id'))
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor()
+        patient_id = int(data['patient_id'])
+        bed_id     = int(data['bed_id'])
+        print("bed_id after int():", bed_id)
+        cursor.execute(
+            "UPDATE beds SET status='Occupied' WHERE id=%(bed_id)s",
+            {"bed_id": bed_id}
+        )
+        cursor.execute(
+            "UPDATE patients SET bed_id=%(bed_id)s WHERE id=%(patient_id)s",
+            {"bed_id": bed_id, "patient_id": patient_id}
+        )
+        db.commit()
+        return jsonify({"message": "Bed assigned successfully", "bed_id": bed_id, "patient_id": patient_id})
+    except Exception as e:
+        if db:
+            db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
+# ── Release Bed ────────────────────────────────────────────────────────────────
+@app.route('/beds/release', methods=['POST'])
+def beds_release():
+    data = request.get_json()
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor()
+        bed_id = int(data['bed_id'])
+        cursor.execute(
+            "UPDATE patients SET bed_id=NULL WHERE bed_id=%s", (bed_id,)
+        )
+        cursor.execute(
+            "UPDATE beds SET status='Available' WHERE id=%s", (bed_id,)
+        )
+        db.commit()
+        return jsonify({"message": "Bed released successfully"})
+    except Exception as e:
+        if db:
+            db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
+# ── Assign Bed (legacy endpoint kept for backward compat) ──────────────────────
 @app.route('/assign_bed', methods=['POST'])
 def assign_bed():
     data = request.get_json()
@@ -402,7 +495,7 @@ def assign_bed():
         cursor = db.cursor()
         patient_id = int(data['patient_id'])
         bed_id = int(data['bed_id'])
-        cursor.execute("UPDATE beds SET status='Occupied' WHERE bed_id=%s", (bed_id,))
+        cursor.execute("UPDATE beds SET status='Occupied' WHERE id=%s", (bed_id,))
         cursor.execute("UPDATE patients SET bed_id=%s WHERE id=%s", (bed_id, patient_id))
         cursor.execute(
             "INSERT INTO patient_bed_assignment (patient_id, bed_id) VALUES (%s,%s)",
@@ -922,6 +1015,61 @@ def medicine_usage():
             db.close()
 
 
+# ── Get Medicines for a Patient ────────────────────────────────────────────────
+# ── All Patient Medicines (pharmacist view) ────────────────────────────────────
+@app.route("/all_patient_medicines", methods=["GET"])
+def get_all_patient_medicines():
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT p.name AS patient_name,
+                   m.name AS medicine_name,
+                   pm.quantity,
+                   pm.date_given
+            FROM patient_medicines pm
+            JOIN medicines m ON pm.medicine_id = m.id
+            JOIN patients  p ON pm.patient_id  = p.id
+            ORDER BY p.name, pm.date_given DESC
+        """)
+        records = serialize_rows(cursor.fetchall())
+        return jsonify(records)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
+@app.route("/patient_medicines/<int:patient_id>", methods=["GET"])
+def get_patient_medicines(patient_id):
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("""
+            SELECT pm.id, m.name AS medicine_name, pm.quantity, pm.date_given
+            FROM patient_medicines pm
+            JOIN medicines m ON pm.medicine_id = m.id
+            WHERE pm.patient_id = %s
+            ORDER BY pm.date_given DESC, pm.id DESC
+        """, (patient_id,))
+        records = serialize_rows(cursor.fetchall())
+        return jsonify({"medicines": records})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
 # ── Assign Medicine to Patient ─────────────────────────────────────────────────
 @app.route("/patient_medicines", methods=["POST"])
 def assign_medicine():
@@ -954,6 +1102,37 @@ def assign_medicine():
         )
         db.commit()
         return jsonify({"message": "Medicine assigned and stock updated!"})
+    except Exception as e:
+        if db:
+            db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if db:
+            db.close()
+
+
+# ── Record Medicine Reorder ────────────────────────────────────────────────────
+@app.route("/medicines/order", methods=["POST"])
+def record_medicine_order():
+    data = request.get_json()
+    db = None
+    cursor = None
+    try:
+        db = get_db_connection()
+        cursor = db.cursor()
+        medicine_ids = data.get('medicine_ids', [])
+        if not medicine_ids:
+            return jsonify({"error": "No medicine IDs provided"}), 400
+        for mid in medicine_ids:
+            cursor.execute("""
+                INSERT INTO medicine_orders (medicine_id, ordered_at)
+                VALUES (%s, NOW())
+                ON CONFLICT DO NOTHING
+            """, (mid,))
+        db.commit()
+        return jsonify({"message": f"Order recorded for {len(medicine_ids)} medicine(s)"})
     except Exception as e:
         if db:
             db.rollback()
@@ -1049,8 +1228,8 @@ def patient_login():
 
 
 # ── Patient Profile ─────────────────────────────────────────────────────────────
-# patient_id = patients.id  (the reception-created record id)
-# Directly queries the patients table — no name/phone matching required.
+# patient_id = patient_accounts.id  (the self-service portal account id).
+# Queries patient_accounts for portal credentials (name, email, phone, age, gender).
 @app.route('/patient_profile/<int:patient_id>', methods=['GET'])
 def patient_profile(patient_id):
     db = None
@@ -1075,15 +1254,35 @@ def patient_profile(patient_id):
 
 
 # ── Patient Appointments ───────────────────────────────────────────────────────
-# patient_id = patients.id  (the reception-created record id)
-# Directly queries appointments — no account resolution step needed.
-@app.route('/patient_appointments/<int:patient_id>', methods=['GET'])
-def patient_appointments(patient_id):
+# account_id = patient_accounts.id (what patient_login returns).
+# Resolves the matching patients.id via phone number, then queries appointments.
+# appointments.patient_id references patients.id (reception record), NOT
+# patient_accounts.id, so the resolution step is mandatory.
+@app.route('/patient_appointments/<int:account_id>', methods=['GET'])
+def patient_appointments(account_id):
     db = None
     cursor = None
     try:
         db = get_db_connection()
         cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Resolve portal account → reception-created patient record via phone
+        cursor.execute(
+            "SELECT phone FROM patient_accounts WHERE id = %s", (account_id,)
+        )
+        account = cursor.fetchone()
+        if not account:
+            return jsonify({"appointments": []})
+
+        cursor.execute(
+            "SELECT id FROM patients WHERE phone = %s LIMIT 1",
+            (account['phone'],)
+        )
+        patient = cursor.fetchone()
+        if not patient:
+            return jsonify({"appointments": []})
+
+        patient_id = patient['id']
         cursor.execute("""
             SELECT a.id, a.date, a.time, a.status,
                    d.name AS doctor_name, d.specialization

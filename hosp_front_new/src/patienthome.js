@@ -265,6 +265,29 @@ export default function PatientHome() {
         }
         .ph-text-block.muted { color: #94A3B8; font-style: italic; }
 
+        /* My Medicines card */
+        .ph-meds-card {
+          grid-column: 1 / -1;
+          background: #fff; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;
+        }
+        .ph-meds-inner {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 20px; padding: 20px 24px;
+        }
+        .ph-meds-icon {
+          width: 44px; height: 44px; border-radius: 12px; background: #F0FDF4;
+          display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .ph-meds-title { font-size: 14px; font-weight: 700; color: #0F172A; margin-bottom: 3px; }
+        .ph-meds-sub   { font-size: 12px; color: #94A3B8; line-height: 1.5; }
+        .ph-meds-btn {
+          background: #0F766E; color: #fff; border: none;
+          padding: 9px 18px; border-radius: 9px; font-size: 13px; font-weight: 600;
+          cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap;
+          transition: background 0.15s; flex-shrink: 0;
+        }
+        .ph-meds-btn:hover { background: #0D5F58; }
+
         /* Nirvana full-width */
         .ph-nirvana {
           grid-column: 1 / -1;
@@ -479,6 +502,28 @@ export default function PatientHome() {
                 )}
               </Card>
 
+              {/* ── My Medicines ── */}
+              <div className="ph-meds-card">
+                <div className="ph-meds-inner">
+                  <div className="ph-meds-icon">
+                    <svg width="22" height="22" fill="none" stroke="#16A34A" strokeWidth="1.8"
+                      strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                      <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>
+                    </svg>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div className="ph-meds-title">My Medicines</div>
+                    <div className="ph-meds-sub">View medicines dispensed to you by the pharmacy.</div>
+                  </div>
+                  <button
+                    className="ph-meds-btn"
+                    onClick={() => navigate("/patient/medicines", { state: { name: patientName, patientId } })}
+                  >
+                    View History →
+                  </button>
+                </div>
+              </div>
+
               {/* ── Nirvana AI — full width ── */}
               <div className="ph-card ph-nirvana">
                 <div className="ph-nirvana-inner">
@@ -489,7 +534,10 @@ export default function PatientHome() {
                       wellness, and access resources — anytime.
                     </div>
                   </div>
-                  <button className="ph-nirvana-btn" onClick={() => navigate("/nirvana")}>
+                  <button
+                    className="ph-nirvana-btn"
+                    onClick={() => navigate("/nirvanachat", { state: { name: patientName, patientId } })}
+                  >
                     Open Nirvana AI →
                   </button>
                 </div>

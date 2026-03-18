@@ -146,7 +146,7 @@ export default function PharmacistHome() {
     {
       label: "Assign Medicine",
       desc:  "Dispense medicine directly to a patient",
-      path:  "/pharmacist/patient-medicine-track",
+      path:  "/pharmacist/assign-medicine",
       iconBg: "#F0FDF4", iconStroke: "#16A34A",
       icon: (
         <svg width="22" height="22" fill="none" stroke="#16A34A" strokeWidth="1.7"

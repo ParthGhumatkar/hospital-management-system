@@ -146,7 +146,7 @@ export default function ReceptionHome() {
     {
       label: "Bed Management",
       desc:  "Track bed availability and assign beds to patients",
-      path:  "/manage-patients#beds",
+      path:  "/bedmanagement",
       color: "#F0FDF4",
       iconBg: "#DCFCE7",
       iconStroke: "#16A34A",
