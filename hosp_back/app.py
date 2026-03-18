@@ -14,8 +14,8 @@ def get_db_connection():
     return mysql.connector.connect(
         host="localhost",
         user="root",
-        password="admin@123",
-        database="hospital",
+        password="",
+        database="db",
         ssl_disabled=True
     )
 
@@ -724,24 +724,39 @@ def patient_signup():
     data = request.get_json()
     try:
         db = get_db_connection()
-        cursor = db.cursor()
-        query = """
-        INSERT INTO patients (name, email, password, phone, age, gender)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """
-        values = (data['name'], data['email'], data['password'], data['phone'], data['age'], data['gender'])
-        cursor.execute(query, values)
+        cursor = db.cursor(dictionary=True)
+
+        # Check if phone already exists
+        cursor.execute("SELECT id FROM patients WHERE phone=%s", (data['phone'],))
+        existing = cursor.fetchone()
+
+        if existing:
+            # Patient already registered by reception — just add email + password
+            cursor.execute(
+                "UPDATE patients SET email=%s, password=%s WHERE phone=%s",
+                (data['email'], data['password'], data['phone'])
+            )
+        else:
+            # New patient — create full record
+            cursor.execute(
+                """INSERT INTO patients (name, email, password, phone, age, gender, address,
+                   insurance_provider, policy_number, medical_history, current_medication)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (data['name'], data['email'], data['password'], data['phone'],
+                 data.get('age'), data.get('gender'), data.get('address', ''),
+                 data.get('insurance_provider', ''), data.get('policy_number', ''),
+                 data.get('medical_history', ''), data.get('current_medication', ''))
+            )
+
         db.commit()
         cursor.close()
         db.close()
-        return jsonify({"message": "Patient signup successful!"})
+        return jsonify({"message": "Signup successful!"})
+
     except Exception as e:
         return jsonify({"message": str(e)}), 400
- 
- 
-# -------------------------------
-# Patient Login
-# -------------------------------
+
+
 @app.route('/patient_login', methods=['POST'])
 def patient_login():
     data = request.get_json()
@@ -755,7 +770,7 @@ def patient_login():
         user = cursor.fetchone()
         cursor.close()
         db.close()
- 
+
         if user:
             return jsonify({
                 "status": "success",
@@ -764,93 +779,48 @@ def patient_login():
             })
         else:
             return jsonify({"status": "fail", "message": "Invalid credentials"}), 401
- 
+
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 # Patient Profile
 # Joins patient_accounts → patients on name + phone
 # -------------------------------
-@app.route('/patient_profile/<int:account_id>', methods=['GET'])
-def patient_profile(account_id):
+@app.route('/patient_profile/<int:patient_id>', methods=['GET'])
+def patient_profile(patient_id):
     try:
         db = get_db_connection()
         cursor = db.cursor(dictionary=True)
- 
-        # Get login account details
         cursor.execute(
-            "SELECT name, phone FROM patient_accounts WHERE id=%s",
-            (account_id,)
-        )
-        account = cursor.fetchone()
-        if not account:
-            return jsonify({"profile": None}), 200
- 
-        # Try to find matching hospital record by name + phone
-        cursor.execute(
-            """
-            SELECT id, name, age, gender, phone, address,
-                   insurance_provider, policy_number,
-                   medical_history, current_medication, bed_id
-            FROM patients
-            WHERE name=%s AND phone=%s
-            LIMIT 1
-            """,
-            (account['name'], account['phone'])
+            """SELECT id, name, age, gender, phone, address,
+                      insurance_provider, policy_number,
+                      medical_history, current_medication, bed_id
+               FROM patients WHERE id=%s""",
+            (patient_id,)
         )
         profile = cursor.fetchone()
- 
         cursor.close()
         db.close()
         return jsonify({"profile": profile})
- 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
- 
- 
-# -------------------------------
-# Patient Appointments
-# Gets all appointments for the matched patient record
-# -------------------------------
-@app.route('/patient_appointments/<int:account_id>', methods=['GET'])
-def patient_appointments(account_id):
+
+
+@app.route('/patient_appointments/<int:patient_id>', methods=['GET'])
+def patient_appointments(patient_id):
     try:
         db = get_db_connection()
         cursor = db.cursor(dictionary=True)
- 
-        # Get login account details to find hospital patient record
         cursor.execute(
-            "SELECT name, phone FROM patient_accounts WHERE id=%s",
-            (account_id,)
-        )
-        account = cursor.fetchone()
-        if not account:
-            return jsonify({"appointments": []}), 200
- 
-        # Find matching hospital patient id
-        cursor.execute(
-            "SELECT id FROM patients WHERE name=%s AND phone=%s LIMIT 1",
-            (account['name'], account['phone'])
-        )
-        patient = cursor.fetchone()
-        if not patient:
-            return jsonify({"appointments": []}), 200
- 
-        # Fetch all appointments with doctor info
-        cursor.execute(
-            """
-            SELECT a.id, a.date, a.time, a.status,
-                   d.name AS doctor_name, d.specialization
-            FROM appointments a
-            JOIN doctors d ON a.doctor_id = d.id
-            WHERE a.patient_id = %s
-            ORDER BY a.date DESC, a.time DESC
-            """,
-            (patient['id'],)
+            """SELECT a.id, a.date, a.time, a.status,
+                      d.name AS doctor_name, d.specialization
+               FROM appointments a
+               JOIN doctors d ON a.doctor_id = d.id
+               WHERE a.patient_id = %s
+               ORDER BY a.date DESC, a.time DESC""",
+            (patient_id,)
         )
         appointments = cursor.fetchall()
- 
-        # Serialize date and time fields
+
         for appt in appointments:
             from datetime import date, datetime, time, timedelta
             if isinstance(appt['date'], (date, datetime)):
@@ -859,14 +829,79 @@ def patient_appointments(account_id):
                 total = int(appt['time'].total_seconds())
                 h, m, s = total // 3600, (total % 3600) // 60, total % 60
                 appt['time'] = f"{h:02d}:{m:02d}:{s:02d}"
-            elif isinstance(appt['time'], time):
-                appt['time'] = appt['time'].strftime('%H:%M:%S')
- 
+
         cursor.close()
         db.close()
         return jsonify({"appointments": appointments})
- 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+from groq import Groq
+ 
+groq_client = Groq(api_key="api key")
+ 
+SYSTEM_PROMPT = """You are Nirvana AI, a compassionate and empathetic mental health support assistant designed for students and patients in India. 
+ 
+Your role:
+- Listen carefully and respond with empathy and warmth
+- Help users manage stress, anxiety, loneliness, and exam pressure
+- Suggest simple coping techniques (breathing exercises, journaling, grounding)
+- Be culturally sensitive to Indian students and their pressures (family expectations, exams, career)
+- Respond in whatever language the user writes in (Hindi, Marathi, Gujarati, Bengali, or English)
+- If the user writes in Hindi/Marathi/Gujarati/Bengali, respond in that same language
+- Never diagnose or prescribe medication
+- If user shows signs of crisis or suicidal thoughts, gently encourage them to speak to a counselor or call iCall: 9152987821
+ 
+Important rules:
+- Keep responses concise and warm (3-5 sentences max unless user needs more)
+- Never be dismissive or clinical
+- Always validate the user's feelings first before giving advice
+- You are not a replacement for professional help — remind this gently when appropriate"""
+ 
+@app.route('/nirvana/chat', methods=['POST'])
+def nirvana_chat():
+    data = request.get_json()
+    messages = data.get('messages', [])
+    mode = data.get('mode', 'anonymous')
+ 
+    try:
+        # Build message history for Groq
+        groq_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+ 
+        for msg in messages:
+            groq_messages.append({
+                "role": msg['role'],
+                "content": msg['content']
+            })
+ 
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=groq_messages,
+            max_tokens=500,
+            temperature=0.7,
+        )
+ 
+        reply = response.choices[0].message.content
+ 
+        # Crisis keyword detection
+        crisis_keywords = [
+            "suicide", "kill myself", "end my life", "want to die",
+            "khatam karna", "marna chahta", "jeena nahi",  # Hindi
+            "maraycha ahe", # Marathi
+        ]
+        is_crisis = any(kw in reply.lower() or kw in messages[-1]['content'].lower()
+                       for kw in crisis_keywords)
+ 
+        return jsonify({
+            "reply": reply,
+            "is_crisis": is_crisis,
+            "mode": mode
+        })
+ 
+    except Exception as e:
+        print("NIRVANA ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)
