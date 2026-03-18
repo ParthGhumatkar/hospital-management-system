@@ -30,21 +30,41 @@ export default function MedicinesReorder() {
 
   const handleSendOne = async (med) => {
     setSending(med.name);
-    await new Promise((r) => setTimeout(r, 600)); // slight delay for UX
-    setSentIds((prev) => new Set([...prev, med.name]));
+    try {
+      const res  = await fetch(`${API_URL}/medicines/order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ medicine_ids: [med.id] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send order");
+      setSentIds((prev) => new Set([...prev, med.name]));
+      setToast({ message: `Order sent to supplier for: ${med.name}`, type: "success" });
+    } catch (err) {
+      setToast({ message: err.message || "Failed to send order", type: "error" });
+    }
     setSending(null);
-    setToast({ message: `Order sent to supplier for: ${med.name}`, type: "success" });
   };
 
   const handleSendAll = async () => {
     const unsent = reorderList.filter((m) => !sentIds.has(m.name));
     if (unsent.length === 0) { setToast({ message: "All orders already sent!", type: "success" }); return; }
     setSending("__all__");
-    await new Promise((r) => setTimeout(r, 800));
-    setSentIds(new Set(reorderList.map((m) => m.name)));
+    try {
+      const res  = await fetch(`${API_URL}/medicines/order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ medicine_ids: unsent.map((m) => m.id) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send orders");
+      setSentIds(new Set(reorderList.map((m) => m.name)));
+      const names = unsent.map((m) => m.name).join(", ");
+      setToast({ message: `Orders sent for: ${names}`, type: "success" });
+    } catch (err) {
+      setToast({ message: err.message || "Failed to send orders", type: "error" });
+    }
     setSending(null);
-    const names = unsent.map((m) => m.name).join(", ");
-    setToast({ message: `Orders sent for: ${names}`, type: "success" });
   };
 
   const unsentCount = reorderList.filter((m) => !sentIds.has(m.name)).length;
