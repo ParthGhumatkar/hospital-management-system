@@ -1,0 +1,10 @@
+flask
+flask-cors
+psycopg2-binary
+python-dotenv
+joblib
+pandas
+scikit-learn
+bcrypt
+gunicorn
+requests
