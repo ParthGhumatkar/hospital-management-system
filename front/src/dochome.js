@@ -133,6 +133,26 @@ export default function DoctorHome() {
   ];
 
   const actionCards = [
+
+    {
+  label: "Live ICU Monitor",
+  desc: "Real-time patient vitals & alerts",
+  path: "/doctor-dashboard",
+  icon: (
+    <svg
+      width="22"
+      height="22"
+      fill="none"
+      stroke="#1D4ED8"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      viewBox="0 0 24 24"
+    >
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+  ),
+},
     {
       label: "Appointments",
       desc: "View & manage your schedule",
@@ -173,6 +193,28 @@ export default function DoctorHome() {
         </svg>
       ),
     },
+    ...(department?.toLowerCase().includes("psychi")
+      ? [{
+          label: "Mental Health Chats",
+          desc: "View and reply to patient conversations",
+          path: "/psychiatrist-dashboard",
+          icon: (
+            <svg
+              width="22"
+              height="22"
+              fill="none"
+              stroke="#1D4ED8"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              viewBox="0 0 24 24"
+            >
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          ),
+        }]
+      : []),
+
   ];
 
   return (
@@ -465,7 +507,13 @@ export default function DoctorHome() {
                 key={a.label}
                 className="dh-action-btn"
                 onClick={() =>
-                  navigate(a.path, { state: { doctorId, name } })
+                  navigate(a.path, {
+                    state: {
+                      doctorId,
+                      name,
+                      department,
+                    },
+                  })
                 }
               >
                 <div className="dh-action-icon">{a.icon}</div>

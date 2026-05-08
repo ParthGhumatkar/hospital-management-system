@@ -22,8 +22,10 @@ export default function PatientLogin() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
+      console.log("LOGIN RESPONSE:", data);
       if (res.ok && data.status === "success") {
-        navigate("/home/patient", { state: { name: data.name, patientId: data.id } });
+        console.log("NAVIGATING...");
+        navigate("/home/patient", { state: { name: data.name, patientId: data.patient_id || data.id,accountId: data.account_id ||data.id } });
       } else {
         setToast({ message: data.message || "Invalid credentials", type: "error" });
       }

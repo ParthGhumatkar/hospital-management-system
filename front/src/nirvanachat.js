@@ -31,8 +31,11 @@ function nowHHMM() {
 export default function NirvanaChat() {
   const navigate        = useNavigate();
   const { state }       = useLocation();
-  const patientName     = state?.name      || "Patient";
-  const patientId       = state?.patientId;
+  const patientName =
+    state?.patientName || state?.name || "Patient";
+  const patientId =
+    state?.patientId;
+  const privacyMode = state?.privacyMode || "anonymous";
 
   const [isDark,     setIsDark]     = useState(() => localStorage.getItem("nirvana-theme") !== "light");
   const [messages,   setMessages]   = useState([]);
@@ -51,7 +54,10 @@ export default function NirvanaChat() {
 
   const bottomRef  = useRef(null);
   const inputRef   = useRef(null);
-  const INI        = getInitials(patientName);
+  const INI =
+    privacyMode === "anonymous"
+      ? "??"
+      : getInitials(patientName);
 
   /* auto-scroll on new messages */
   useEffect(() => {
@@ -95,7 +101,7 @@ export default function NirvanaChat() {
       const res  = await fetch(`${API_URL}/nirvana_chat`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ messages: groqMessages, patient_id: patientId }),
+        body:    JSON.stringify({ messages: groqMessages, patient_id: patientId,  privacy_mode: privacyMode,}),
       });
       const data = await res.json();
 
@@ -536,7 +542,11 @@ export default function NirvanaChat() {
           {/* center — title */}
           <div className="nv-header-center">
             <div className="nv-title">🧠 Nirvana AI</div>
-            <div className="nv-subtitle">powered by groq · llama3</div>
+            <div className="nv-subtitle">
+              {privacyMode === "anonymous"
+                ? "anonymous session"
+                : "verified session"}
+              </div>
           </div>
 
           {/* right — online indicator + theme toggle */}
@@ -621,6 +631,65 @@ export default function NirvanaChat() {
 
           <div ref={bottomRef} />
         </div>
+
+        {privacyMode === "verified" && (
+          <div
+            style={{
+              padding: "14px 20px",
+              borderTop: "1px solid var(--border)",
+              background: "rgba(124,58,237,0.08)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "var(--text-primary)",
+                  marginBottom: 4,
+                }}
+              >
+                Talk to a Psychiatrist
+              </div>
+
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                }}
+              >
+                Get professional mental health support.
+              </div>
+            </div>
+
+            <button
+              onClick={() =>
+                navigate("/psychiatrists", {
+                state: {
+      patientId,
+      patientName,
+    },
+  })
+}
+              style={{
+                background: "#7C3AED",
+                color: "white",
+                border: "none",
+                borderRadius: 10,
+                padding: "10px 16px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Explore →
+            </button>
+          </div>
+        )}
 
         {/* ══ INPUT BAR ══ */}
         <div className="nv-input-bar">

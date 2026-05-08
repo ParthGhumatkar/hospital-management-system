@@ -323,36 +323,281 @@ def pharmacist_login():
 
 
 # ── Register Patient ───────────────────────────────────────────────────────────
+# ── Register Patient ─────────────────────────────────────────────
 @app.route('/register_patient', methods=['POST'])
 def register_patient():
+
     data = request.get_json()
+
     db = None
     cursor = None
+
     try:
+
         db = get_db_connection()
-        cursor = db.cursor()
+
+        cursor = db.cursor(
+            cursor_factory=psycopg2.extras.RealDictCursor
+        )
+
+        # ── Check Existing Patient Account ─────────────────────
         cursor.execute("""
-            INSERT INTO patients
-            (name, age, gender, phone, address, insurance_provider,
-             policy_number, medical_history, current_medication)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+
+            SELECT id, patient_id
+
+            FROM patient_accounts
+
+            WHERE email = %s
+               OR phone = %s
+
         """, (
-            data['name'], data['age'], data['gender'], data['phone'], data['address'],
-            data.get('insurance_provider', ''), data.get('policy_number', ''),
-            data.get('medical_history', ''), data.get('current_medication', '')
+
+            data['email'],
+            data['phone']
+
         ))
-        db.commit()
-        return jsonify({"message": "Patient registered successfully"})
+
+        existing_account = cursor.fetchone()
+
+        # ======================================================
+        # CASE 1 → ACCOUNT ALREADY EXISTS
+        # ======================================================
+
+        if existing_account:
+
+            # ── Prevent Duplicate Linking ─────────────────────
+            if existing_account['patient_id']:
+
+                return jsonify({
+
+                    "error":
+                    "Patient account is already linked to a hospital profile"
+
+                }), 400
+
+            # ── Create Hospital Patient Record ────────────────
+            cursor.execute("""
+
+                INSERT INTO patients
+                (
+                    name,
+                    age,
+                    gender,
+                    phone,
+                    address,
+                    insurance_provider,
+                    policy_number,
+                    medical_history,
+                    current_medication
+                )
+
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+
+                RETURNING id
+
+            """, (
+
+                data['name'],
+                data['age'],
+                data['gender'],
+                data['phone'],
+                data['address'],
+
+                data.get('insurance_provider', ''),
+                data.get('policy_number', ''),
+                data.get('medical_history', ''),
+                data.get('current_medication', '')
+
+            ))
+
+            patient = cursor.fetchone()
+
+            patient_id = patient['id']
+
+            # ── Link Existing Account To Patient ──────────────
+            cursor.execute("""
+
+                UPDATE patient_accounts
+
+                SET patient_id = %s
+
+                WHERE id = %s
+
+            """, (
+
+                patient_id,
+                existing_account['id']
+
+            ))
+
+            db.commit()
+
+            return jsonify({
+
+                "message":
+                "Existing patient account linked successfully",
+
+                "patient_id":
+                patient_id
+
+            })
+
+        # ======================================================
+        # CASE 2 → NEW ACCOUNT + NEW PATIENT
+        # ======================================================
+
+        else:
+
+            # ── Generate Temporary Password ───────────────────
+            import random
+            import string
+
+            temp_password = ''.join(
+
+                random.choices(
+
+                    string.ascii_letters + string.digits,
+
+                    k=8
+
+                )
+
+            )
+
+            # ── Hash Password ─────────────────────────────────
+            hashed_password = hash_password(
+                temp_password
+            )
+
+            # ── Create Patient Account ────────────────────────
+            cursor.execute("""
+
+                INSERT INTO patient_accounts
+                (
+                    name,
+                    email,
+                    password,
+                    phone,
+                    age,
+                    gender,
+                    first_login
+                )
+
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+
+                RETURNING id
+
+            """, (
+
+                data['name'],
+                data['email'],
+                hashed_password,
+                data['phone'],
+                data['age'],
+                data['gender'],
+                True
+
+            ))
+
+            account = cursor.fetchone()
+
+            account_id = account['id']
+
+            # ── Create Hospital Patient Record ────────────────
+            cursor.execute("""
+
+                INSERT INTO patients
+                (
+                    name,
+                    age,
+                    gender,
+                    phone,
+                    address,
+                    insurance_provider,
+                    policy_number,
+                    medical_history,
+                    current_medication
+                )
+
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+
+                RETURNING id
+
+            """, (
+
+                data['name'],
+                data['age'],
+                data['gender'],
+                data['phone'],
+                data['address'],
+
+                data.get('insurance_provider', ''),
+                data.get('policy_number', ''),
+                data.get('medical_history', ''),
+                data.get('current_medication', '')
+
+            ))
+
+            patient = cursor.fetchone()
+
+            patient_id = patient['id']
+
+            # ── Link Account To Patient ───────────────────────
+            cursor.execute("""
+
+                UPDATE patient_accounts
+
+                SET patient_id = %s
+
+                WHERE id = %s
+
+            """, (
+
+                patient_id,
+                account_id
+
+            ))
+
+            db.commit()
+
+            # ── OPTIONAL EMAIL FUNCTION ───────────────────────
+            # send_patient_credentials_email(
+            #     data['email'],
+            #     data['name'],
+            #     temp_password
+            # )
+
+            return jsonify({
+
+                "message":
+                "Patient registered successfully",
+
+                "patient_id":
+                patient_id,
+
+                "temporary_password":
+                temp_password
+
+            })
+
     except Exception as e:
+
         if db:
             db.rollback()
-        return jsonify({"error": str(e)}), 500
+
+        return jsonify({
+
+            "error": str(e)
+
+        }), 500
+
     finally:
+
         if cursor:
             cursor.close()
+
         if db:
             db.close()
-
 
 # ── Get All Patients ───────────────────────────────────────────────────────────
 @app.route("/patients")
@@ -1265,51 +1510,7 @@ def record_vitals():
             db.close()
 
 
-# ── Get Patient Vitals (patient portal — uses patient_accounts.id) ────────────
-# Resolves account_id → patients.id via shared phone number, then fetches vitals.
-@app.route("/patient_vitals/<int:account_id>", methods=["GET"])
-def get_patient_vitals(account_id):
-    db = None
-    cursor = None
-    try:
-        db = get_db_connection()
-        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        cursor.execute(
-            "SELECT phone FROM patient_accounts WHERE id = %s", (account_id,)
-        )
-        account = cursor.fetchone()
-        if not account:
-            return jsonify({"vitals": None})
-
-        cursor.execute(
-            "SELECT id FROM patients WHERE phone = %s LIMIT 1", (account["phone"],)
-        )
-        patient = cursor.fetchone()
-        if not patient:
-            return jsonify({"vitals": None})
-
-        cursor.execute("""
-            SELECT pv.age, pv.gender, pv.bmi, pv.temperature, pv.heart_rate,
-                   pv.systolic_bp, pv.diastolic_bp, pv.spo2, pv.blood_sugar,
-                   pv.fever, pv.cough, pv.fatigue, pv.difficulty_breathing,
-                   pv.chest_pain, pv.nausea, pv.history_diabetes,
-                   pv.history_hypertension, pv.history_asthma,
-                   pv.recorded_at,
-                   d.name AS doctor_name
-            FROM patient_vitals pv
-            LEFT JOIN doctors d ON pv.recorded_by_doctor_id = d.id
-            WHERE pv.patient_id = %s
-        """, (patient["id"],))
-        row = cursor.fetchone()
-        return jsonify({"vitals": dict(row) if row else None})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if db:
-            db.close()
 
 
 # ── Medicine Stock ─────────────────────────────────────────────────────────────
@@ -1584,7 +1785,7 @@ def patient_login():
         )
         user = cursor.fetchone()
         if user and check_password(data['password'], user['password']):
-            return jsonify({"status": "success", "id": user['id'], "name": user['name']})
+            return jsonify({"status": "success", "account_id": user['id'],"patient_id": user['patient_id'], "name": user['name']})
         return jsonify({"status": "fail", "message": "Invalid credentials"}), 401
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1598,25 +1799,68 @@ def patient_login():
 # ── Patient Profile ─────────────────────────────────────────────────────────────
 # patient_id = patient_accounts.id  (the self-service portal account id).
 # Queries patient_accounts for portal credentials (name, email, phone, age, gender).
-@app.route('/patient_profile/<int:patient_id>', methods=['GET'])
-def patient_profile(patient_id):
+@app.route('/patient_profile/<int:account_id>', methods=['GET'])
+def patient_profile(account_id):
+
     db = None
     cursor = None
+
     try:
+
         db = get_db_connection()
-        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cursor = db.cursor(
+            cursor_factory=psycopg2.extras.RealDictCursor
+        )
+
+        # ── Fetch Account + Linked Patient ─────────────
         cursor.execute("""
-            SELECT id, name, email, phone, age, gender
-            FROM patient_accounts
-            WHERE id = %s
-        """, (patient_id,))
+
+            SELECT
+                pa.id AS account_id,
+                pa.name,
+                pa.email,
+                pa.phone,
+                pa.age,
+                pa.gender,
+                pa.patient_id,
+
+                p.address,
+                p.insurance_provider,
+                p.policy_number,
+                p.medical_history,
+                p.current_medication
+
+            FROM patient_accounts pa
+
+            LEFT JOIN patients p
+
+            ON pa.patient_id = p.id
+
+            WHERE pa.id = %s
+
+        """, (account_id,))
+
         profile = cursor.fetchone()
-        return jsonify({"profile": dict(profile) if profile else None})
+
+        return jsonify({
+
+            "profile":
+            dict(profile) if profile else None
+
+        })
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
     finally:
+
         if cursor:
             cursor.close()
+
         if db:
             db.close()
 
@@ -1789,6 +2033,9 @@ def nirvana_chat():
     patient_id = data.get('patient_id')
     if not patient_id:
         return jsonify({"error": "patient_id is required"}), 400
+    privacy_mode = data.get("privacy_mode", "anonymous")
+    if not privacy_mode :
+        return jsonify({"error":"privacy mode is required"}),400
 
     messages = data.get('messages')
     if not messages or not isinstance(messages, list):
@@ -1798,41 +2045,51 @@ def nirvana_chat():
     db = None
     cursor = None
     new_count = 0
-    try:
-        db = get_db_connection()
-        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        cursor.execute("""
-            SELECT message_count FROM nirvana_usage
-            WHERE patient_id = %s AND date = CURRENT_DATE
-        """, (patient_id,))
-        row = cursor.fetchone()
-        current_count = row['message_count'] if row else 0
+    if privacy_mode == "verified":
+        try:
+            db = get_db_connection()
+            cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        if current_count >= NIRVANA_DAILY_LIMIT:
-            return jsonify({"error": "Daily limit reached"}), 429
+            cursor.execute("""
+                SELECT message_count FROM nirvana_usage
+                WHERE patient_id = %s AND date = CURRENT_DATE
+            """, (patient_id,))
+            row = cursor.fetchone()
+            current_count = row['message_count'] if row else 0
 
-        cursor.execute("""
-            INSERT INTO nirvana_usage (patient_id, date, message_count)
-            VALUES (%s, CURRENT_DATE, 1)
-            ON CONFLICT (patient_id, date) DO UPDATE
-            SET message_count = nirvana_usage.message_count + 1
-            RETURNING message_count
-        """, (patient_id,))
-        new_count = cursor.fetchone()['message_count']
-        db.commit()
-    except Exception as e:
-        if db:
-            db.rollback()
-        print(f"[nirvana_chat db] {e}")
-        return jsonify({"error": "Database error"}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if db:
-            db.close()
+            if current_count >= NIRVANA_DAILY_LIMIT:
+                return jsonify({"error": "Daily limit reached"}), 429
 
-    remaining = NIRVANA_DAILY_LIMIT - new_count
+            cursor.execute("""
+                INSERT INTO nirvana_usage (patient_id, date, message_count)
+                VALUES (%s, CURRENT_DATE, 1)
+                ON CONFLICT (patient_id, date) DO UPDATE
+                SET message_count = nirvana_usage.message_count + 1
+                RETURNING message_count
+            """, (patient_id,))
+            new_count = cursor.fetchone()['message_count']
+            db.commit()
+
+        except Exception as e:
+            if db:
+                db.rollback()
+
+            print(f"[nirvana_chat db] {e}")
+            return jsonify({"error": "Database error"}), 500
+
+        finally:
+            if cursor:
+                cursor.close()
+
+            if db:
+                db.close()
+
+    remaining = (
+        NIRVANA_DAILY_LIMIT - new_count
+        if privacy_mode == "verified"
+        else None
+    )
 
     # ── Build message list (strip client system prompt, inject server one) ──────
     conversation = [
@@ -1875,6 +2132,327 @@ def nirvana_chat():
         print(f"[nirvana_chat exception] {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/psychiatrists", methods=["GET"])
+def get_psychiatrists():
+    db = None
+    cursor = None
 
+    try:
+        db = get_db_connection()
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                id,
+                name,
+                specialization,
+                department
+            FROM doctors
+            WHERE LOWER(department) = 'psychiatry'
+        """)
+
+        doctors = cursor.fetchall()
+
+        return jsonify({
+            "psychiatrists": doctors
+        })
+
+    except Exception as e:
+        print(f"[psychiatrists] {e}")
+        return jsonify({"error": "Database error"}), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if db:
+            db.close()
+
+
+@app.route("/send_psychiatrist_message", methods=["POST"])
+def send_psychiatrist_message():
+
+    data = request.get_json()
+    print(data)
+
+    patient_id = data.get("patient_id")
+    doctor_id = data.get("doctor_id")
+    sender = data.get("sender")
+    message = data.get("message")
+    print(
+    patient_id,
+    doctor_id,
+    sender,
+    message)
+
+    if not all([patient_id, doctor_id, sender, message]):
+        return jsonify({"error": "Missing fields"}), 400
+
+    db = None
+    cursor = None
+
+    try:
+        db = get_db_connection()
+        cursor = db.cursor()
+
+        cursor.execute("""
+            INSERT INTO psychiatrist_messages
+            (patient_id, doctor_id, sender, message)
+            VALUES (%s, %s, %s, %s)
+        """, (
+            patient_id,
+            doctor_id,
+            sender,
+            message
+        ))
+
+        db.commit()
+
+        return jsonify({
+            "success": True
+        })
+
+    except Exception as e:
+        if db:
+            db.rollback()
+
+        print(f"[send_psychiatrist_message] {e}")
+
+        return jsonify({
+            "error": "Database error"
+        }), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if db:
+            db.close()
+@app.route("/get_psychiatrist_messages/<patient_id>/<doctor_id>", methods=["GET"])
+def get_psychiatrist_messages(patient_id, doctor_id):
+
+    db = None
+    cursor = None
+
+    try:
+        db = get_db_connection()
+
+        cursor = db.cursor(
+            cursor_factory=psycopg2.extras.RealDictCursor
+        )
+
+        cursor.execute("""
+            SELECT sender, message, created_at
+            FROM psychiatrist_messages
+            WHERE patient_id = %s
+            AND doctor_id = %s
+            ORDER BY created_at ASC
+        """, (patient_id, doctor_id))
+
+        messages = cursor.fetchall()
+
+        return jsonify({
+            "messages": messages
+        })
+
+    except Exception as e:
+        print(f"[get_psychiatrist_messages] {e}")
+
+        return jsonify({
+            "error": "Database error"
+        }), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if db:
+            db.close()
+
+@app.route("/psychiatrist_patients/<doctor_id>", methods=["GET"])
+def psychiatrist_patients(doctor_id):
+
+    db = None
+    cursor = None
+
+    try:
+        db = get_db_connection()
+
+        cursor = db.cursor(
+            cursor_factory=psycopg2.extras.RealDictCursor
+        )
+
+        cursor.execute("""
+            SELECT DISTINCT
+                p.id,
+                p.name,
+                MAX(pm.created_at) AS last_message
+            FROM psychiatrist_messages pm
+
+            JOIN patients p
+            ON p.id = pm.patient_id
+
+            WHERE pm.doctor_id = %s
+
+            GROUP BY p.id, p.name
+
+            ORDER BY last_message DESC
+        """, (doctor_id,))
+
+        patients = cursor.fetchall()
+
+        return jsonify({
+            "patients": patients
+        })
+
+    except Exception as e:
+        print(f"[psychiatrist_patients] {e}")
+
+        return jsonify({
+            "error": "Database error"
+        }), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if db:
+            db.close()
+
+@app.route("/doctor-dashboard-data", methods=["GET"])
+def doctor_dashboard_data():
+
+    try:
+
+        conn = psycopg2.connect(DATABASE_URL)
+
+        cursor = conn.cursor(
+            cursor_factory=psycopg2.extras.RealDictCursor
+        )
+
+        # ── Latest Patient Vitals ──────────────────────
+        cursor.execute("""
+
+            SELECT DISTINCT ON (patient_id)
+
+    patient_id,
+    name,
+    bed
+
+    
+FROM patient_vitals_live
+
+ORDER BY patient_id, timestamp DESC;
+
+        """)
+
+        vitals = cursor.fetchall()
+
+        # ── Critical Count ─────────────────────────────
+        cursor.execute("""
+
+            SELECT COUNT(*) AS critical_count
+
+            FROM patient_vitals_live
+
+            WHERE risk_level = 'CRITICAL'
+
+        """)
+
+        critical_count = cursor.fetchone()
+
+        # ── Warning Count ──────────────────────────────
+        cursor.execute("""
+
+            SELECT COUNT(*) AS warning_count
+
+            FROM patient_vitals_live
+
+            WHERE risk_level = 'WARNING'
+
+        """)
+
+        warning_count = cursor.fetchone()
+
+        # ── Normal Count ───────────────────────────────
+        cursor.execute("""
+
+            SELECT COUNT(*) AS normal_count
+
+            FROM patient_vitals_live
+
+            WHERE risk_level = 'NORMAL'
+
+        """)
+
+        normal_count = cursor.fetchone()
+
+        return jsonify({
+
+            "patients": vitals,
+
+            "stats": {
+
+                "critical": critical_count["critical_count"],
+                "warning": warning_count["warning_count"],
+                "normal": normal_count["normal_count"]
+
+            }
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        })
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+@app.route("/patient-monitor/<int:patient_id>", methods=["GET"])
+def patient_monitor(patient_id):
+
+    try:
+
+        conn = psycopg2.connect(DATABASE_URL)
+
+        cursor = conn.cursor(
+            cursor_factory=psycopg2.extras.RealDictCursor
+        )
+
+        # ── Latest 20 Records For One Patient ─────────
+        cursor.execute("""
+
+            SELECT *
+
+            FROM patient_vitals_live
+
+            WHERE patient_id = %s
+
+            ORDER BY timestamp DESC
+
+            LIMIT 20
+
+        """, (patient_id,))
+
+        vitals = cursor.fetchall()
+
+        return jsonify({
+            "vitals": vitals
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        })
+
+    finally:
+
+        cursor.close()
+        conn.close()
 if __name__ == "__main__":
     app.run(debug=True)

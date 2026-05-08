@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import API_URL from "./config";
 
+
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 function getInitials(name) {
   if (!name) return "?";
@@ -91,6 +92,7 @@ export default function PatientHome() {
 
   const patientId   = state?.patientId;
   const patientName = state?.name || "Patient";
+  const accountId = state.accountId; 
 
   const [profile,      setProfile]      = useState(null);
   const [medRecord,    setMedRecord]    = useState(null);
@@ -111,9 +113,9 @@ export default function PatientHome() {
     (async () => {
       try {
         const [profileRes, apptRes, medRes] = await Promise.all([
-          fetch(`${API_URL}/patient_profile/${patientId}`),
-          fetch(`${API_URL}/patient_appointments/${patientId}`),
-          fetch(`${API_URL}/patient_medical_records/${patientId}`),
+          fetch(`${API_URL}/patient_profile/${accountId}`),
+          fetch(`${API_URL}/patient_appointments/${accountId}`),
+          fetch(`${API_URL}/patient_medical_records/${accountId}`),
         ]);
         const pd = await profileRes.json();
         const ad = await apptRes.json();
@@ -664,7 +666,14 @@ export default function PatientHome() {
                   </div>
                   <button
                     className="ph-nirvana-btn"
-                    onClick={() => navigate("/nirvanachat", { state: { name: patientName, patientId } })}
+                    onClick={() =>
+                      navigate("/nirvana-privacy", {
+                        state: {
+      name: patientName,
+      patientId,
+      },
+  })
+}
                   >
                     Open Nirvana AI →
                   </button>

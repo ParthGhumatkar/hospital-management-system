@@ -10,6 +10,7 @@ import PharmacistSignup from "./pharmacistsignup";
 import PatientLogin from "./patientlogin";
 import PatientSignup from "./patientsignup";
 import PatientHome from "./patienthome";
+import Patientvitals from "./patientvitals";
 
 import DocLogin from "./doclogin";
 import HODLogin from "./hodlogin";
@@ -40,7 +41,15 @@ import AllPatientMedicines from "./allpatientmedicines";
 import MedicinesExpiry from "./expiry";
 
 import NirvanaChat from "./nirvanachat";
-import PatientVitals from "./patientvitals";
+import PrivacySelection from "./privacyselection";
+import Psychiatrists from "./psychiatrists";
+import PsychiatristChat from "./psychiatristchat";
+import PsychiatristDashboard from "./psychiatristdashboard";
+
+
+import DoctorDashboard from "./doctordashboard";
+import PatientMonitor from "./patientmonitor";
+import PatientDashboard from "./patientdashboard";
 
 function NirvanaPlaceholder() {
   return (
@@ -85,6 +94,7 @@ function App() {
         <Route path="/home/hod" element={<HODHome />} />
         <Route path="/home/reception" element={<ReceptionHome />} />
         <Route path="/home/patient" element={<PatientHome />} />
+        <Route path="/doctor-dashboard" element={<DoctorDashboard />} />
 
         {/* Reception sub-routes */}
         <Route path="/register-patient" element={<RegisterPatient />} />
@@ -110,11 +120,22 @@ function App() {
 
         {/* Patient sub-routes */}
         <Route path="/patient/medicines" element={<PatientMedicineTrack />} />
-        <Route path="/patient_vitals/:id" element={<PatientVitals />} />
+        <Route path="/patient_vitals/:patientId" element={<Patientvitals />}/>
+        <Route path="/patient-monitor/:patientId" element={<PatientMonitor />}/>
+        <Route path="/patient_vitals/:patientId" element={<Patientvitals />}/>
+        
 
         {/* Nirvana AI */}
         <Route path="/nirvana"     element={<NirvanaPlaceholder />} />
         <Route path="/nirvanachat" element={<NirvanaChat />} />
+        <Route path="/nirvana-privacy" element={<PrivacySelection />} />
+        <Route path="/psychiatrists" element={<Psychiatrists />} />
+        <Route path="/psychiatrist-chat" element={<PsychiatristChat />} />
+        <Route
+          path="/psychiatrist-dashboard"
+          element={<PsychiatristDashboard />}
+        />
+        
 
         {/* Catch-all: redirect unknown paths back to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
